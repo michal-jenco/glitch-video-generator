@@ -21,12 +21,14 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern }) {
   return {
     seed,
     intensity: +intensity,
     chaosRate: +chaosRate,
     maxFx: +maxFx,
+    source,
+    proceduralPattern,
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
 }

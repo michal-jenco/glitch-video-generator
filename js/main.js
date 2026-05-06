@@ -11,8 +11,19 @@ const chaos = new ChaosEngine({ seed: parseSeed('0xCAFEBABE') });
 const recorder = new Recorder(canvas);
 const gifExporter = new GifExporter(canvas);
 
-let source = new ProceduralSource();
-source.setPattern('random');
+let source = new WebcamSource('user');
+// sync row visibility to match the default webcam selection
+document.addEventListener('DOMContentLoaded', () => {}, { once: true });
+// rows aren't hidden by CSS default — fix initial state inline
+// (switchSource handles this on change; we mirror it here for the initial load)
+requestAnimationFrame(() => {
+  $('proceduralRow').classList.add('hidden');
+  $('uploadRow').classList.add('hidden');
+  $('webcamRow').classList.remove('hidden');
+  WebcamSource.hasMultipleCameras().then(has => {
+    $('flipCamBtn').style.display = has ? '' : 'none';
+  });
+});
 
 // ---------- resize ----------
 function resize(){
@@ -250,6 +261,10 @@ function randomGlitchyName() {
 
 presetNameEl.value = randomGlitchyName();
 
+function currentSourceKind() {
+  return document.querySelector('input[name="source"]:checked')?.value || 'webcam';
+}
+
 function collectState() {
   return captureState({
     seed: seedEl.value,
@@ -257,6 +272,8 @@ function collectState() {
     chaosRate: chaosRateEl.value,
     maxFx: maxFxEl.value,
     effectConfig: chaos.effectConfig,
+    source: currentSourceKind(),
+    proceduralPattern: $('proceduralPattern').value,
   });
 }
 
@@ -275,6 +292,14 @@ function applyState(state) {
       const wgt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="weight"]`);
       if (wgt) { wgt.value = fx.weight; const o = wgt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.weight).toFixed(2); }
     }
+  }
+  if (state.source && state.source !== 'upload') {
+    const radio = document.querySelector(`input[name="source"][value="${state.source}"]`);
+    if (radio) { radio.checked = true; }
+    if (state.source === 'procedural' && state.proceduralPattern) {
+      $('proceduralPattern').value = state.proceduralPattern;
+    }
+    switchSource(state.source, null);
   }
   syncOutputs();
 }
