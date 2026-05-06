@@ -1,0 +1,209 @@
+:root {
+  --bg: #07070a;
+  --fg: #e8ffe8;
+  --accent: #ff00aa;
+  --accent2: #00ffd0;
+  --warn: #ff3030;
+  --panel: rgba(8, 10, 14, 0.82);
+  --line: #1f2230;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  background: #000;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#stage {
+  position: fixed; inset: 0;
+  width: 100vw; height: 100vh;
+  display: block;
+  background: #000;
+  image-rendering: pixelated;
+}
+
+#panelToggle {
+  position: fixed; top: 12px; right: 12px;
+  z-index: 20;
+  background: var(--panel);
+  color: var(--accent2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 6px 10px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+#panelToggle:hover { color: var(--accent); }
+
+#panel {
+  position: fixed;
+  top: 12px; right: 56px;
+  width: 320px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  padding: 16px;
+  z-index: 10;
+  transition: transform 0.18s ease;
+}
+#panel.hidden { transform: translateX(380px); }
+
+#panel header h1 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+}
+#panel header h1 span { color: var(--accent); }
+#panel header .sub {
+  margin: 2px 0 12px;
+  color: var(--accent2);
+  opacity: 0.7;
+  font-size: 10px;
+}
+
+#panel section {
+  border-top: 1px dashed var(--line);
+  padding: 10px 0;
+}
+#panel section h2 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--accent2);
+  font-weight: normal;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+.row.hidden { display: none; }
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+label.slider {
+  display: grid;
+  grid-template-columns: 80px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+label.slider span { opacity: 0.8; }
+label.slider output {
+  font-size: 10px;
+  color: var(--accent2);
+  text-align: right;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  background: transparent;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 14px;
+  background: var(--accent);
+  border: none;
+  margin-top: -6px;
+  cursor: pointer;
+}
+
+input[type="text"], select, input[type="file"] {
+  background: #000;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 6px;
+  width: 100%;
+}
+
+button {
+  background: #000;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--line);
+  color: var(--fg);
+}
+
+button.rec { color: var(--warn); border-color: var(--warn); }
+button.rec.recording {
+  background: var(--warn);
+  color: #000;
+  animation: blink 0.7s infinite;
+}
+@keyframes blink {
+  50% { opacity: 0.55; }
+}
+
+.seed {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 6px;
+}
+
+#recStatus {
+  font-size: 10px;
+  color: var(--accent2);
+  opacity: 0.8;
+}
+
+.hint {
+  font-size: 10px;
+  opacity: 0.55;
+  margin: 4px 0 0;
+}
+
+#panel footer {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+#activeFx {
+  color: var(--accent);
+  text-align: right;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
