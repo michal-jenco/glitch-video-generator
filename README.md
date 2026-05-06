@@ -22,7 +22,8 @@ Static WebGL glitch lab for generating chaotic visuals from uploads, webcam, or 
   - `rand params`
 - Session controls:
   - `pause / unpause` rendering
-  - `lock chain / unlock chain` to freeze current pass pipeline
+  - `lock chain / unlock chain` to freeze current pass pipeline order/composition
+  - while locked, per-effect toggles and `amt` still apply immediately
   - randomize seed
 - Recording:
   - `REC` / `STOP`
@@ -96,6 +97,7 @@ Open:
 4. Optional:
    - freeze animation with `pause`
    - freeze current pass pipeline with `lock chain`
+   - keep tweaking effect toggles/amount while locked to art-direct a fixed chain
 5. Record with `REC`, stop, then click `DL`.
 
 ## Seeded Reproducibility

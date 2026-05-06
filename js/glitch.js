@@ -58,7 +58,11 @@ export class ChaosEngine {
   setLocked(locked, time = 0){
     this.locked = !!locked;
     if (this.locked){
-      this.lockedPasses = this._computePasses(time);
+      this.lockedPasses = this._computePasses(time).map(pass => ({
+        ...pass,
+        baseIntensity: pass.intensity,
+      }));
+      this._refreshLockedPassesFromConfig();
     } else {
       this.lockedPasses = null;
     }
@@ -76,6 +80,25 @@ export class ChaosEngine {
       this.active = this.active.filter(e => e.name !== name);
       if (this.burstName === name) this.burstName = null;
     }
+    this._refreshLockedPassesFromConfig();
+  }
+
+  _refreshLockedPassesFromConfig(){
+    if (!this.locked || !this.lockedPasses) return;
+    this.lockedPasses = this.lockedPasses
+      .filter(pass => {
+        const cfg = this.effectConfig.get(pass.name);
+        return cfg && cfg.enabled;
+      })
+      .map(pass => {
+        const cfg = this.effectConfig.get(pass.name);
+        const base = pass.baseIntensity ?? pass.intensity;
+        return {
+          ...pass,
+          baseIntensity: base,
+          intensity: base * (cfg?.amount ?? 1),
+        };
+      });
   }
 
   _enabledEffects(){
