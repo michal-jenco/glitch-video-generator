@@ -39,6 +39,8 @@ const exportMp4Btn = $('exportMp4Btn');
 const recStatus = $('recStatus');
 const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
+const webcamRow = $('webcamRow');
+const flipCamBtn = $('flipCamBtn');
 const pauseBtn = $('pauseBtn');
 const lockChainBtn = $('lockChainBtn');
 const effectsList = $('effectsList');
@@ -76,7 +78,7 @@ $('reseed').addEventListener('click', () => {
 });
 
 document.querySelectorAll('input[name="source"]').forEach(r => {
-  r.addEventListener('change', () => switchSource(r.value));
+  r.addEventListener('change', () => switchSource(r.value, null));
 });
 
 $('proceduralPattern').addEventListener('change', e => {
@@ -90,20 +92,34 @@ $('fileInput').addEventListener('change', e => {
   source = file.type.startsWith('video') ? new VideoSource(file) : new ImageSource(file);
 });
 
-function switchSource(kind){
+let webcamFacing = 'user'; // 'user' = front, 'environment' = back
+
+function switchSource(kind, facingMode){
   if (source.stop) source.stop();
   uploadRow.classList.toggle('hidden', kind !== 'upload');
   proceduralRow.classList.toggle('hidden', kind !== 'procedural');
+  webcamRow.classList.toggle('hidden', kind !== 'webcam');
   if (kind === 'procedural'){
     source = new ProceduralSource();
     source.setPattern($('proceduralPattern').value);
   } else if (kind === 'webcam'){
-    source = new WebcamSource();
+    webcamFacing = facingMode || webcamFacing;
+    source = new WebcamSource(webcamFacing);
+    // Show flip button only when device has multiple cameras
+    WebcamSource.hasMultipleCameras().then(has => {
+      flipCamBtn.style.display = has ? '' : 'none';
+    });
   } else {
     // upload — wait for file; fall back to procedural until then
     source = new ProceduralSource();
   }
 }
+
+flipCamBtn.addEventListener('click', () => {
+  webcamFacing = webcamFacing === 'user' ? 'environment' : 'user';
+  flipCamBtn.textContent = webcamFacing === 'user' ? '⇄ flip cam' : '⇄ front cam';
+  switchSource('webcam', webcamFacing);
+});
 
 recBtn.addEventListener('click', () => {
   if (recorder.isRecording()){

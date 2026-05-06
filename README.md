@@ -8,7 +8,7 @@ Static WebGL glitch lab for generating chaotic visuals from uploads, webcam, or 
 - Source modes:
   - `procedural` (noise, bars, text, grid, circles, plasma, random rotation)
   - `upload` (image or video files)
-  - `webcam` (mirrored/selfie-style preview)
+  - `webcam` (mirrored/selfie-style preview; **⇄ flip cam** button appears automatically on devices with multiple cameras, e.g. phones)
 - Chaos engine with seeded randomness for reproducible runs
 - Rich effect library (26 effects) with dynamic multi-pass chaining
 - Per-effect controls:
@@ -27,8 +27,9 @@ Static WebGL glitch lab for generating chaotic visuals from uploads, webcam, or 
   - randomize seed
 - Recording:
   - `REC` / `STOP`
-  - explicit `DL` (download last recording)
-  - `.webm` output using `MediaRecorder` (`vp9` with `vp8` fallback)
+  - explicit `DL` (download last `.webm` recording)
+  - `MP4` export via bundled ffmpeg.wasm (single-threaded, no `SharedArrayBuffer` required — works on GitHub Pages)
+  - `.webm` via `MediaRecorder` (`vp9` with `vp8` fallback)
 
 ## Effect Set
 
@@ -109,4 +110,9 @@ Open:
 
 - Primary target: Chrome (best support/performance).
 - `MediaRecorder` and WebM support vary by browser; Safari behavior may be limited depending on version/system codecs.
+- MP4 export uses a vendored single-threaded ffmpeg.wasm build — no `SharedArrayBuffer` / cross-origin isolation headers required, so it works on GitHub Pages as-is.
+
+## Camera Flip (Mobile)
+
+When using the `webcam` source on a device with multiple cameras (phones, tablets), a **⇄ flip cam** button appears below the source selector. Clicking it switches between the front (`user`) and back (`environment`) camera. The button is hidden on single-camera devices (laptops, desktops).
 

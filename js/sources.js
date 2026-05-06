@@ -43,7 +43,9 @@ export class VideoSource {
 }
 
 export class WebcamSource {
-  constructor(){
+  // facingMode: 'user' (front) | 'environment' (back)
+  constructor(facingMode = 'user'){
+    this.facingMode = facingMode;
     this.video = document.createElement('video');
     this.video.muted = true;
     this.video.playsInline = true;
@@ -51,7 +53,8 @@ export class WebcamSource {
     this.stream = null;
     this.mirrorCanvas = document.createElement('canvas');
     this.mirrorCtx = this.mirrorCanvas.getContext('2d');
-    navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
+    const constraints = { video: { width: 1280, height: 720, facingMode }, audio: false };
+    navigator.mediaDevices.getUserMedia(constraints)
       .then(stream => {
         this.stream = stream;
         this.video.srcObject = stream;
@@ -64,6 +67,15 @@ export class WebcamSource {
         console.error('webcam', err);
         alert('Webcam denied or unavailable: ' + err.message);
       });
+  }
+
+  // Returns true if the device has more than one video input (i.e. a flip makes sense)
+  static async hasMultipleCameras(){
+    try {
+      // Need at least one permission grant to see device labels/kinds
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter(d => d.kind === 'videoinput').length > 1;
+    } catch { return false; }
   }
   ready(){ return this._ready && this.video.readyState >= 2; }
   frame(){

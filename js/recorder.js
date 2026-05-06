@@ -120,13 +120,14 @@ export class Recorder {
     const ffmpeg = new FFmpeg();
     if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(progress));
 
-    const ffmpegBase = `${window.location.origin}/vendor/ffmpeg`;
-    const coreBase = `${window.location.origin}/vendor/ffmpeg`;
-    const assetVersion = 'v2';
+    // Derive the vendor path relative to this module so it works on any
+    // hosting subpath (e.g. GitHub Pages /glitch-video-generator/).
+    const ffmpegBase = new URL('../vendor/ffmpeg', import.meta.url).href;
+    const v = 'v2';
     await ffmpeg.load({
-      classWorkerURL: `${ffmpegBase}/worker.js?${assetVersion}`,
-      coreURL: `${coreBase}/ffmpeg-core.js?${assetVersion}`,
-      wasmURL: `${coreBase}/ffmpeg-core.wasm?${assetVersion}`,
+      classWorkerURL: `${ffmpegBase}/worker.js?${v}`,
+      coreURL: `${ffmpegBase}/ffmpeg-core.js?${v}`,
+      wasmURL: `${ffmpegBase}/ffmpeg-core.wasm?${v}`,
     });
 
     this.ffmpeg = ffmpeg;
