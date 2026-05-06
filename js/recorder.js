@@ -10,6 +10,8 @@ export class Recorder {
     this.lastObjectUrl = null;
     this.lastTimestamp = null;
     this.onFinished = null;
+    this.ffmpeg = null;
+    this.ffmpegLoaded = false;
   }
 
   isRecording(){ return this.recorder && this.recorder.state === 'recording'; }
@@ -64,5 +66,71 @@ export class Recorder {
     a.click();
     a.remove();
     return true;
+  }
+
+  async exportMp4(seed = 'capture', onProgress = null, onStatus = null){
+    if (!this.lastBlob) return false;
+
+    if (onStatus) onStatus('mp4 loading core...');
+    const ffmpeg = await this._getFfmpeg(onProgress);
+    const inputName = 'input.webm';
+    const outputName = 'output.mp4';
+    const inputData = new Uint8Array(await this.lastBlob.arrayBuffer());
+
+    await ffmpeg.writeFile(inputName, inputData);
+    if (onStatus) onStatus('mp4 encoding...');
+    await ffmpeg.exec([
+      '-i', inputName,
+      '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
+      '-r', '30',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '30',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-an',
+      outputName,
+    ]);
+
+    const out = await ffmpeg.readFile(outputName);
+    await ffmpeg.deleteFile(inputName);
+    await ffmpeg.deleteFile(outputName);
+
+    const blob = new Blob([out], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `glitch-${seed}-${this.lastTimestamp || 'recording'}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (onStatus) onStatus('mp4 downloaded');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return true;
+  }
+
+  async _getFfmpeg(onProgress = null){
+    if (this.ffmpeg && this.ffmpegLoaded) {
+      if (onProgress) this.ffmpeg.on('progress', ({ progress }) => onProgress(progress));
+      return this.ffmpeg;
+    }
+
+    const { FFmpeg } = await import('../vendor/ffmpeg/index.js');
+
+    const ffmpeg = new FFmpeg();
+    if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(progress));
+
+    const ffmpegBase = `${window.location.origin}/vendor/ffmpeg`;
+    const coreBase = `${window.location.origin}/vendor/ffmpeg`;
+    const assetVersion = 'v2';
+    await ffmpeg.load({
+      classWorkerURL: `${ffmpegBase}/worker.js?${assetVersion}`,
+      coreURL: `${coreBase}/ffmpeg-core.js?${assetVersion}`,
+      wasmURL: `${coreBase}/ffmpeg-core.wasm?${assetVersion}`,
+    });
+
+    this.ffmpeg = ffmpeg;
+    this.ffmpegLoaded = true;
+    return ffmpeg;
   }
 }

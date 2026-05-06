@@ -35,6 +35,7 @@ const fpsEl = $('fps');
 const activeFxEl = $('activeFx');
 const recBtn = $('recBtn');
 const downloadBtn = $('downloadBtn');
+const exportMp4Btn = $('exportMp4Btn');
 const recStatus = $('recStatus');
 const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
@@ -114,12 +115,14 @@ recBtn.addEventListener('click', () => {
     recorder.start();
     recBtn.classList.add('recording');
     recBtn.textContent = '■ STOP';
+    exportMp4Btn.disabled = true;
     recStatus.textContent = 'recording...';
   }
 });
 
 recorder.onFinished = () => {
   downloadBtn.disabled = !recorder.hasRecording();
+  exportMp4Btn.disabled = !recorder.hasRecording();
   recStatus.textContent = 'saved';
 };
 
@@ -127,6 +130,26 @@ downloadBtn.addEventListener('click', () => {
   const ok = recorder.download(seedEl.value.replace(/\s+/g, '_'));
   if (ok) {
     recStatus.textContent = 'downloaded';
+  }
+});
+
+exportMp4Btn.addEventListener('click', async () => {
+  if (!recorder.hasRecording()) return;
+  exportMp4Btn.disabled = true;
+  const base = seedEl.value.replace(/\s+/g, '_');
+  recStatus.textContent = 'mp4 loading core...';
+  try {
+    const ok = await recorder.exportMp4(base, (progress) => {
+      recStatus.textContent = `mp4 ${(progress * 100).toFixed(0)}%`;
+    }, (status) => {
+      recStatus.textContent = status;
+    });
+    if (ok) recStatus.textContent = 'mp4 downloaded';
+  } catch (err) {
+    console.error('mp4 export failed', err);
+    recStatus.textContent = 'mp4 failed';
+  } finally {
+    exportMp4Btn.disabled = !recorder.hasRecording();
   }
 });
 
