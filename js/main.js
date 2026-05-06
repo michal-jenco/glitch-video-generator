@@ -239,6 +239,17 @@ function refreshPresetDropdown() {
 }
 refreshPresetDropdown();
 
+function randomGlitchyName() {
+  const prefixes = ['VOID','NULL','CORRUPT','STATIC','DRIFT','CHAOS','GLITCH','SIGNAL','NOISE','ERROR','BLEED','FLUX'];
+  const suffixes = ['LOOP','FRAME','PULSE','BURST','TRACE','CORE','DECAY','WAVE','BURN','GHOST'];
+  const hex = () => Math.floor(Math.random()*0x100).toString(16).toUpperCase().padStart(2,'0');
+  const p = prefixes[Math.floor(Math.random()*prefixes.length)];
+  const s = suffixes[Math.floor(Math.random()*suffixes.length)];
+  return `${p}_${s}_${hex()}${hex()}`;
+}
+
+presetNameEl.value = randomGlitchyName();
+
 function collectState() {
   return captureState({
     seed: seedEl.value,
@@ -274,7 +285,7 @@ savePresetBtn.addEventListener('click', () => {
   savePreset(name, collectState());
   refreshPresetDropdown();
   presetSelect.value = name;
-  presetNameEl.value = '';
+  presetNameEl.value = randomGlitchyName();
 });
 
 loadPresetBtn.addEventListener('click', () => {
