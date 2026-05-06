@@ -119,8 +119,10 @@ export class Procedural {
       const x = W/2 + Math.cos(a)*W*0.3*(0.5+0.5*Math.sin(t+i));
       const y = H/2 + Math.sin(a*1.3)*H*0.3;
       ctx.fillStyle = `hsla(${(i*30+t*60)%360},90%,60%,0.7)`;
+      // Canvas arc throws if radius is negative; clamp prevents render-loop stalls.
+      const radius = Math.max(2, 30 + Math.sin(t*3+i)*40);
       ctx.beginPath();
-      ctx.arc(x,y, 30+Math.sin(t*3+i)*40, 0, Math.PI*2);
+      ctx.arc(x, y, radius, 0, Math.PI*2);
       ctx.fill();
     }
   }

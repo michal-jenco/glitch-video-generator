@@ -36,6 +36,13 @@ export class ChaosEngine {
     this.lastSwap = 0;
     this.burstUntil = 0;
     this.burstName = null;
+    this.locked = false;
+    this.lockedPasses = null;
+    this.effectConfig = new Map(EFFECTS.map(fx => [fx.name, {
+      enabled: true,
+      weight: 1,
+      amount: 1,
+    }]));
   }
 
   setSeed(seed){
@@ -46,16 +53,64 @@ export class ChaosEngine {
     this.burstUntil = 0;
   }
 
-  setMaxActive(n){ this.maxActive = Math.max(1, Math.min(6, n|0)); }
+  setMaxActive(n){ this.maxActive = Math.max(1, Math.min(10, n|0)); }
   setChaosRate(r){ this.chaosRate = Math.max(0, Math.min(1, r)); }
+  setLocked(locked, time = 0){
+    this.locked = !!locked;
+    if (this.locked){
+      this.lockedPasses = this._computePasses(time);
+    } else {
+      this.lockedPasses = null;
+    }
+  }
+  setEffectConfig(name, cfg = {}){
+    const prev = this.effectConfig.get(name) || { enabled: true, weight: 1, amount: 1 };
+    const next = {
+      enabled: cfg.enabled ?? prev.enabled,
+      weight: Math.max(0, cfg.weight ?? prev.weight),
+      amount: Math.max(0, cfg.amount ?? prev.amount),
+    };
+    this.effectConfig.set(name, next);
+    if (!next.enabled) {
+      // Drop already-running instances immediately when an effect is untoggled.
+      this.active = this.active.filter(e => e.name !== name);
+      if (this.burstName === name) this.burstName = null;
+    }
+  }
+
+  _enabledEffects(){
+    const list = [];
+    for (const fx of EFFECTS){
+      const cfg = this.effectConfig.get(fx.name);
+      if (!cfg || !cfg.enabled || cfg.weight <= 0) continue;
+      list.push({ fx, cfg });
+    }
+    return list;
+  }
+
+  _pickWeighted(enabled){
+    let total = 0;
+    for (const e of enabled) total += e.cfg.weight;
+    if (total <= 0) return enabled[Math.floor(this.rng() * enabled.length)];
+    let r = this.rng() * total;
+    for (const e of enabled){
+      r -= e.cfg.weight;
+      if (r <= 0) return e;
+    }
+    return enabled[enabled.length - 1];
+  }
 
   _newEffect(time){
-    const fx = EFFECTS[Math.floor(this.rng()*EFFECTS.length)];
+    const enabled = this._enabledEffects();
+    if (!enabled.length) return null;
+    const choice = this._pickWeighted(enabled);
+    const fx = choice.fx;
+    const cfg = choice.cfg;
     const life = 0.8 + this.rng()*5.0;
     return {
       name: fx.name,
       params: [this.rng(), this.rng(), this.rng(), this.rng()],
-      intensity: 0.4 + this.rng()*0.6,
+      intensity: (0.4 + this.rng()*0.6) * cfg.amount,
       born: time,
       life,
       fadeIn: 0.2 + this.rng()*0.4,
@@ -64,12 +119,22 @@ export class ChaosEngine {
   }
 
   update(time){
+    if (this.locked) return;
+
+    // Remove effects that got disabled via UI while they were already active.
+    this.active = this.active.filter(e => {
+      const cfg = this.effectConfig.get(e.name);
+      return cfg && cfg.enabled;
+    });
+
     // expire
     this.active = this.active.filter(e => time - e.born < e.life);
 
     // fill
     while (this.active.length < this.maxActive){
-      this.active.push(this._newEffect(time));
+      const next = this._newEffect(time);
+      if (!next) break;
+      this.active.push(next);
     }
 
     // swap-in jitter on chaos timer
@@ -92,11 +157,17 @@ export class ChaosEngine {
     if (time > this.burstUntil && this.rng() < 0.003 + this.chaosRate*0.02){
       this.burstUntil = time + 0.05 + this.rng()*0.25;
       const burstChoices = ['strobe','color','jpegblocks','datamosh','band','rgb_split','feedback'];
-      this.burstName = burstChoices[Math.floor(this.rng()*burstChoices.length)];
+      const availableBurst = burstChoices.filter(name => {
+        const cfg = this.effectConfig.get(name);
+        return cfg && cfg.enabled;
+      });
+      this.burstName = availableBurst.length
+        ? availableBurst[Math.floor(this.rng() * availableBurst.length)]
+        : null;
     }
   }
 
-  passes(time){
+  _computePasses(time){
     const out = [];
     for (const e of this.active){
       const age = time - e.born;
@@ -110,6 +181,11 @@ export class ChaosEngine {
       out.push({ name: this.burstName, params: [this.rng(), this.rng(), this.rng(), this.rng()], intensity: 1.0 });
     }
     return out;
+  }
+
+  passes(time){
+    if (this.locked) return this.lockedPasses || [];
+    return this._computePasses(time);
   }
 
   describe(){

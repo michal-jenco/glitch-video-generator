@@ -49,6 +49,8 @@ export class WebcamSource {
     this.video.playsInline = true;
     this._ready = false;
     this.stream = null;
+    this.mirrorCanvas = document.createElement('canvas');
+    this.mirrorCtx = this.mirrorCanvas.getContext('2d');
     navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
       .then(stream => {
         this.stream = stream;
@@ -64,7 +66,20 @@ export class WebcamSource {
       });
   }
   ready(){ return this._ready && this.video.readyState >= 2; }
-  frame(){ return this.video; }
+  frame(){
+    if (!this.ready()) return this.video;
+    const w = this.video.videoWidth || 1280;
+    const h = this.video.videoHeight || 720;
+    if (this.mirrorCanvas.width !== w || this.mirrorCanvas.height !== h){
+      this.mirrorCanvas.width = w;
+      this.mirrorCanvas.height = h;
+    }
+    this.mirrorCtx.save();
+    this.mirrorCtx.setTransform(-1, 0, 0, 1, w, 0);
+    this.mirrorCtx.drawImage(this.video, 0, 0, w, h);
+    this.mirrorCtx.restore();
+    return this.mirrorCanvas;
+  }
   stop(){
     if (this.stream) for (const t of this.stream.getTracks()) t.stop();
     this.video.srcObject = null;

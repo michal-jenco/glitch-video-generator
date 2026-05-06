@@ -54,15 +54,28 @@
     </label>
     <label class="slider">
       <span>max effects</span>
-      <input type="range" id="maxFx" min="1" max="6" step="1" value="3">
-      <output id="maxFxOut">3</output>
+      <input type="range" id="maxFx" min="1" max="10" step="1" value="4">
+      <output id="maxFxOut">4</output>
     </label>
     <div class="row">
       <label class="seed">seed
         <input type="text" id="seed" value="0xCAFEBABE">
       </label>
       <button id="reseed">↻</button>
+      <button id="lockChainBtn">lock chain</button>
+      <button id="pauseBtn">pause</button>
     </div>
+  </section>
+
+  <section>
+    <h2>EFFECTS</h2>
+    <div class="row">
+      <button id="enableAllEffects">enable all</button>
+      <button id="disableAllEffects">untoggle all</button>
+      <button id="randomizeToggles">rand toggles</button>
+      <button id="randomizeParams">rand params</button>
+    </div>
+    <div id="effectsList" class="effectsList"></div>
   </section>
 
   <section>

@@ -359,6 +359,86 @@ void main(){
 }
 `;
 
+// 21. Solarize / threshold chaos
+const FX_SOLARIZE = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float t = mix(0.25, 0.85, uParam0);
+  c = mix(c, 1.0 - c, step(t, c));
+  c += (hash23(vUv*uResolution + floor(uTime*30.0)).rgb - 0.5) * 0.12 * uIntensity;
+  outColor = vec4(c, 1.0);
+}
+`;
+
+// 22. Vertical line drift with per-column offsets
+const FX_LINESHIFT = HEAD + `
+void main(){
+  float col = floor(vUv.x * (30.0 + uParam0 * 200.0));
+  float off = (hash11(col + floor(uTime*8.0)+uSeed)-0.5) * 0.2 * uIntensity;
+  vec2 uv = vec2(vUv.x, fract(vUv.y + off));
+  outColor = texture(uTex, uv);
+}
+`;
+
+// 23. Polar tunnel warp
+const FX_TUNNEL = HEAD + `
+void main(){
+  vec2 p = vUv - 0.5;
+  float r = length(p);
+  float a = atan(p.y, p.x);
+  vec2 uv = vec2(
+    fract(a / 6.28318 + uTime * (0.05 + 0.2*uParam0)),
+    fract((1.0 / max(0.03, r)) * 0.12 + uTime * (0.08 + 0.3*uParam1))
+  );
+  vec3 c = texture(uTex, uv).rgb;
+  c = mix(texture(uTex, vUv).rgb, c, uIntensity);
+  outColor = vec4(c, 1.0);
+}
+`;
+
+// 24. Bitflip-style channel scrambling
+const FX_BITFLIP = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float cell = floor(vUv.x*80.0) + floor(vUv.y*80.0)*97.0 + floor(uTime*20.0);
+  float r = hash11(cell + uSeed);
+  if (r > 1.0 - 0.75*uIntensity){
+    c = c.bgr;
+    c = floor(c * mix(255.0, 8.0, uParam0)) / mix(255.0, 8.0, uParam0);
+  }
+  if (r < 0.08*uIntensity){
+    c.rg = c.gr;
+  }
+  outColor = vec4(c, 1.0);
+}
+`;
+
+// 25. Swirl burst around center
+const FX_SWIRL = HEAD + `
+void main(){
+  vec2 p = vUv - 0.5;
+  float r = length(p);
+  float ang = (1.0-r) * (0.8 + 6.0*uParam0) * uIntensity;
+  float s = sin(ang), c = cos(ang);
+  mat2 R = mat2(c,-s,s,c);
+  vec2 uv = R * p + 0.5;
+  outColor = texture(uTex, uv);
+}
+`;
+
+// 26. Chroma ghost trails
+const FX_GHOSTRGB = HEAD + `
+void main(){
+  vec2 o1 = vec2(0.006, 0.0) * (0.5 + uParam0) * uIntensity;
+  vec2 o2 = vec2(-0.004, 0.003) * (0.5 + uParam1) * uIntensity;
+  vec3 base = texture(uTex, vUv).rgb;
+  vec3 g1 = texture(uPrev, vUv + o1).rgb;
+  vec3 g2 = texture(uPrev, vUv + o2).rgb;
+  vec3 c = vec3(g1.r, base.g, g2.b);
+  outColor = vec4(max(base, c), 1.0);
+}
+`;
+
 export const EFFECTS = [
   { name: 'rgb_split',   src: FX_RGB },
   { name: 'datamosh',    src: FX_DATAMOSH },
@@ -380,6 +460,12 @@ export const EFFECTS = [
   { name: 'edge',        src: FX_EDGE },
   { name: 'barcode',     src: FX_BARCODE },
   { name: 'strobe',      src: FX_STROBE },
+  { name: 'solarize',    src: FX_SOLARIZE },
+  { name: 'lineshift',   src: FX_LINESHIFT },
+  { name: 'tunnel',      src: FX_TUNNEL },
+  { name: 'bitflip',     src: FX_BITFLIP },
+  { name: 'swirl',       src: FX_SWIRL },
+  { name: 'ghostrgb',    src: FX_GHOSTRGB },
 ];
 
 function compile(gl, type, src){

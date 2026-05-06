@@ -1,4 +1,4 @@
-import { Pipeline } from './shaders.js';
+import { Pipeline, EFFECTS } from './shaders.js';
 import { ChaosEngine, parseSeed } from './glitch.js';
 import { ProceduralSource, ImageSource, VideoSource, WebcamSource } from './sources.js';
 import { Recorder } from './recorder.js';
@@ -38,6 +38,13 @@ const downloadBtn = $('downloadBtn');
 const recStatus = $('recStatus');
 const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
+const pauseBtn = $('pauseBtn');
+const lockChainBtn = $('lockChainBtn');
+const effectsList = $('effectsList');
+const enableAllEffectsBtn = $('enableAllEffects');
+const disableAllEffectsBtn = $('disableAllEffects');
+const randomizeTogglesBtn = $('randomizeToggles');
+const randomizeParamsBtn = $('randomizeParams');
 
 function syncOutputs(){
   intensityOut.textContent = (+intensityEl.value).toFixed(2);
@@ -103,7 +110,6 @@ recBtn.addEventListener('click', () => {
     recBtn.classList.remove('recording');
     recBtn.textContent = '● REC';
     recStatus.textContent = 'saved';
-    downloadBtn.disabled = !recorder.hasRecording();
   } else {
     recorder.start();
     recBtn.classList.add('recording');
@@ -111,6 +117,11 @@ recBtn.addEventListener('click', () => {
     recStatus.textContent = 'recording...';
   }
 });
+
+recorder.onFinished = () => {
+  downloadBtn.disabled = !recorder.hasRecording();
+  recStatus.textContent = 'saved';
+};
 
 downloadBtn.addEventListener('click', () => {
   const ok = recorder.download(seedEl.value.replace(/\s+/g, '_'));
@@ -123,37 +134,159 @@ $('panelToggle').addEventListener('click', () => {
   $('panel').classList.toggle('hidden');
 });
 
+function mountEffectControls(){
+  effectsList.innerHTML = '';
+  for (const fx of EFFECTS){
+    const card = document.createElement('div');
+    card.className = 'fxCard';
+    card.innerHTML = `
+      <div class="fxTop">
+        <label>
+          <input type="checkbox" data-fx="${fx.name}" data-kind="enabled" checked>
+          <span class="fxName">${fx.name}</span>
+        </label>
+      </div>
+      <label class="slider">
+        <span>amt</span>
+        <input type="range" min="0" max="2" step="0.01" value="1" data-fx="${fx.name}" data-kind="amount">
+        <output>1.00</output>
+      </label>
+      <label class="slider">
+        <span>freq</span>
+        <input type="range" min="0" max="3" step="0.01" value="1" data-fx="${fx.name}" data-kind="weight">
+        <output>1.00</output>
+      </label>
+    `;
+    effectsList.appendChild(card);
+  }
+
+  effectsList.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.dataset || !t.dataset.fx || !t.dataset.kind) return;
+    const name = t.dataset.fx;
+    const kind = t.dataset.kind;
+    if (kind === 'enabled'){
+      chaos.setEffectConfig(name, { enabled: t.checked });
+      return;
+    }
+    const value = +t.value;
+    const out = t.parentElement.querySelector('output');
+    if (out) out.textContent = value.toFixed(2);
+    if (kind === 'amount') chaos.setEffectConfig(name, { amount: value });
+    if (kind === 'weight') chaos.setEffectConfig(name, { weight: value });
+  });
+}
+mountEffectControls();
+
+randomizeTogglesBtn.addEventListener('click', () => {
+  const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
+  let enabledCount = 0;
+  checks.forEach((el) => {
+    const on = Math.random() > 0.35;
+    el.checked = on;
+    if (on) enabledCount++;
+    chaos.setEffectConfig(el.dataset.fx, { enabled: on });
+  });
+  // Keep at least one effect enabled.
+  if (enabledCount === 0 && checks.length) {
+    const fallback = checks[Math.floor(Math.random() * checks.length)];
+    fallback.checked = true;
+    chaos.setEffectConfig(fallback.dataset.fx, { enabled: true });
+  }
+});
+
+enableAllEffectsBtn.addEventListener('click', () => {
+  const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
+  if (!checks.length) return;
+  checks.forEach((el) => {
+    el.checked = true;
+    chaos.setEffectConfig(el.dataset.fx, { enabled: true });
+  });
+});
+
+disableAllEffectsBtn.addEventListener('click', () => {
+  const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
+  if (!checks.length) return;
+  checks.forEach((el) => {
+    el.checked = false;
+    chaos.setEffectConfig(el.dataset.fx, { enabled: false });
+  });
+});
+
+randomizeParamsBtn.addEventListener('click', () => {
+  const sliders = effectsList.querySelectorAll('input[data-kind="amount"], input[data-kind="weight"]');
+  sliders.forEach((el) => {
+    const kind = el.dataset.kind;
+    const value = kind === 'amount'
+      ? 0.1 + Math.random() * 1.9
+      : Math.random() * 3.0;
+    el.value = value.toFixed(2);
+    const out = el.parentElement.querySelector('output');
+    if (out) out.textContent = (+el.value).toFixed(2);
+    if (kind === 'amount') chaos.setEffectConfig(el.dataset.fx, { amount: +el.value });
+    if (kind === 'weight') chaos.setEffectConfig(el.dataset.fx, { weight: +el.value });
+  });
+});
+
 // ---------- main loop ----------
 let last = performance.now();
 let fpsAcc = 0, fpsFrames = 0, fpsT = 0;
+let paused = false;
+let frozenFrame = null;
+let chainLocked = false;
+
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'unpause' : 'pause';
+  if (!paused) {
+    last = performance.now();
+    frozenFrame = null;
+  }
+});
+
+lockChainBtn.addEventListener('click', () => {
+  chainLocked = !chainLocked;
+  lockChainBtn.textContent = chainLocked ? 'unlock chain' : 'lock chain';
+  chaos.setLocked(chainLocked, performance.now() / 1000);
+});
 
 function frame(){
   const now = performance.now();
   const dt = (now - last) / 1000;
-  last = now;
+  if (!paused) last = now;
   const t = now / 1000;
 
-  if (source.ready()){
-    pipeline.uploadSource(source.frame(t));
-  } else if (source.frame) {
-    // prime with whatever is there (procedural always ready); for not-ready video/img, skip
+  if (!paused) {
+    if (source.ready()){
+      pipeline.uploadSource(source.frame(t));
+    } else if (source.frame) {
+      // prime with whatever is there (procedural always ready); for not-ready video/img, skip
+    }
+
+    chaos.update(t);
+    const passes = chaos.passes(t);
+    frozenFrame = {
+      passes,
+      time: t,
+      seed: (chaos.seed % 100000) / 100000,
+      globalIntensity: +intensityEl.value,
+    };
   }
 
-  chaos.update(t);
-  const passes = chaos.passes(t);
-  pipeline.render({
-    passes,
-    time: t,
-    seed: (chaos.seed % 100000) / 100000,
-    globalIntensity: +intensityEl.value,
-  });
+  if (frozenFrame) {
+    pipeline.render(frozenFrame);
+  }
 
   // FPS
-  fpsAcc += dt; fpsFrames++;
-  if (fpsAcc >= 0.5){
-    const fps = fpsFrames / fpsAcc;
-    fpsEl.textContent = fps.toFixed(0).padStart(3) + ' fps';
-    fpsAcc = 0; fpsFrames = 0;
+  if (!paused) {
+    fpsAcc += dt; fpsFrames++;
+    if (fpsAcc >= 0.5){
+      const fps = fpsFrames / fpsAcc;
+      fpsEl.textContent = fps.toFixed(0).padStart(3) + ' fps';
+      fpsAcc = 0; fpsFrames = 0;
+    }
+  } else {
+    fpsEl.textContent = 'PAUSED';
   }
   activeFxEl.textContent = chaos.describe();
 

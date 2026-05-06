@@ -9,6 +9,7 @@ export class Recorder {
     this.lastBlob = null;
     this.lastObjectUrl = null;
     this.lastTimestamp = null;
+    this.onFinished = null;
   }
 
   isRecording(){ return this.recorder && this.recorder.state === 'recording'; }
@@ -47,6 +48,7 @@ export class Recorder {
     this.lastTimestamp = new Date().toISOString().replace(/[:.]/g,'-');
     if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
     this.lastObjectUrl = URL.createObjectURL(this.lastBlob);
+    if (typeof this.onFinished === 'function') this.onFinished(this.lastBlob);
   }
 
   hasRecording(){
