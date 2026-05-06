@@ -85,11 +85,39 @@
     <h2>RECORD</h2>
     <div class="row">
       <button id="recBtn" class="rec">● REC</button>
-      <button id="downloadBtn" disabled>↓ DL</button>
-      <button id="exportMp4Btn" disabled>MP4</button>
+      <button id="downloadBtn" disabled>↓ WEBM</button>
+      <button id="exportMp4Btn" disabled>↓ MP4</button>
       <span id="recStatus">idle</span>
     </div>
-    <p class="hint">DL = webm. MP4 = in-browser transcode (slower on older phones).</p>
+    <div class="row">
+      <button id="gifBtn">● GIF</button>
+      <select id="gifDuration">
+        <option value="2">2s</option>
+        <option value="3" selected>3s</option>
+        <option value="5">5s</option>
+        <option value="8">8s</option>
+      </select>
+      <button id="snapshotBtn">📷 PNG</button>
+      <span id="gifStatus"></span>
+    </div>
+    <p class="hint">GIF is downscaled to 480px wide. PNG is full canvas resolution.</p>
+  </section>
+
+  <section>
+    <h2>PRESETS</h2>
+    <div class="row">
+      <input type="text" id="presetName" placeholder="preset name" style="flex:1">
+      <button id="savePresetBtn">save</button>
+    </div>
+    <div class="row">
+      <select id="presetSelect" style="flex:1"><option value="">— load preset —</option></select>
+      <button id="loadPresetBtn">load</button>
+      <button id="deletePresetBtn">✕</button>
+    </div>
+    <div class="row">
+      <button id="sharePresetBtn" style="flex:1">⇗ copy share link</button>
+    </div>
+    <p class="hint">Share link encodes all settings into the URL. Saved presets are local only.</p>
   </section>
 
   <footer>

@@ -2,11 +2,14 @@ import { Pipeline, EFFECTS } from './shaders.js';
 import { ChaosEngine, parseSeed } from './glitch.js';
 import { ProceduralSource, ImageSource, VideoSource, WebcamSource } from './sources.js';
 import { Recorder } from './recorder.js';
+import { GifExporter, downloadBlob } from './gif-exporter.js';
+import { listPresets, savePreset, deletePreset, captureState, stateToHash, stateFromHash } from './presets.js';
 
 const canvas = document.getElementById('stage');
 const pipeline = new Pipeline(canvas);
 const chaos = new ChaosEngine({ seed: parseSeed('0xCAFEBABE') });
 const recorder = new Recorder(canvas);
+const gifExporter = new GifExporter(canvas);
 
 let source = new ProceduralSource();
 source.setPattern('random');
@@ -37,6 +40,16 @@ const recBtn = $('recBtn');
 const downloadBtn = $('downloadBtn');
 const exportMp4Btn = $('exportMp4Btn');
 const recStatus = $('recStatus');
+const gifBtn = $('gifBtn');
+const gifDuration = $('gifDuration');
+const gifStatus = $('gifStatus');
+const snapshotBtn = $('snapshotBtn');
+const presetNameEl = $('presetName');
+const presetSelect = $('presetSelect');
+const savePresetBtn = $('savePresetBtn');
+const loadPresetBtn = $('loadPresetBtn');
+const deletePresetBtn = $('deletePresetBtn');
+const sharePresetBtn = $('sharePresetBtn');
 const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
 const webcamRow = $('webcamRow');
@@ -172,6 +185,132 @@ exportMp4Btn.addEventListener('click', async () => {
 $('panelToggle').addEventListener('click', () => {
   $('panel').classList.toggle('hidden');
 });
+
+// ---------- GIF export ----------
+let gifRecording = false;
+gifBtn.addEventListener('click', async () => {
+  if (gifRecording) return;
+  gifRecording = true;
+  gifBtn.classList.add('recording');
+  gifBtn.textContent = '⏳ GIF';
+  const duration = +gifDuration.value;
+  const seed = seedEl.value.replace(/\s+/g, '_');
+  try {
+    const blob = await gifExporter.record({
+      fps: 12,
+      duration,
+      quality: 8,
+      maxWidth: 480,
+      onProgress: p => { gifStatus.textContent = (p * 100).toFixed(0) + '%'; },
+      onStatus: s => { gifStatus.textContent = s; },
+    });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadBlob(blob, `glitch-${seed}-${ts}.gif`);
+    gifStatus.textContent = 'saved!';
+  } catch (err) {
+    console.error('gif failed', err);
+    gifStatus.textContent = 'failed';
+  } finally {
+    gifRecording = false;
+    gifBtn.classList.remove('recording');
+    gifBtn.textContent = '● GIF';
+    setTimeout(() => { gifStatus.textContent = ''; }, 3000);
+  }
+});
+
+// ---------- PNG snapshot ----------
+snapshotBtn.addEventListener('click', () => {
+  canvas.toBlob(blob => {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadBlob(blob, `glitch-snap-${ts}.png`);
+  }, 'image/png');
+});
+
+// ---------- Presets ----------
+function refreshPresetDropdown() {
+  const all = listPresets();
+  const names = Object.keys(all).sort();
+  presetSelect.innerHTML = '<option value="">— load preset —</option>';
+  for (const n of names) {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    presetSelect.appendChild(opt);
+  }
+}
+refreshPresetDropdown();
+
+function collectState() {
+  return captureState({
+    seed: seedEl.value,
+    intensity: intensityEl.value,
+    chaosRate: chaosRateEl.value,
+    maxFx: maxFxEl.value,
+    effectConfig: chaos.effectConfig,
+  });
+}
+
+function applyState(state) {
+  if (state.seed != null) { seedEl.value = state.seed; chaos.setSeed(parseSeed(state.seed)); }
+  if (state.intensity != null) { intensityEl.value = state.intensity; }
+  if (state.chaosRate != null) { chaosRateEl.value = state.chaosRate; chaos.setChaosRate(+state.chaosRate); }
+  if (state.maxFx != null) { maxFxEl.value = state.maxFx; chaos.setMaxActive(+state.maxFx); }
+  if (state.effects) {
+    for (const fx of state.effects) {
+      chaos.setEffectConfig(fx.name, { enabled: fx.enabled, amount: fx.amount, weight: fx.weight });
+      const cb = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="enabled"]`);
+      if (cb) cb.checked = fx.enabled;
+      const amt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="amount"]`);
+      if (amt) { amt.value = fx.amount; const o = amt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.amount).toFixed(2); }
+      const wgt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="weight"]`);
+      if (wgt) { wgt.value = fx.weight; const o = wgt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.weight).toFixed(2); }
+    }
+  }
+  syncOutputs();
+}
+
+savePresetBtn.addEventListener('click', () => {
+  const name = presetNameEl.value.trim();
+  if (!name) { presetNameEl.focus(); return; }
+  savePreset(name, collectState());
+  refreshPresetDropdown();
+  presetSelect.value = name;
+  presetNameEl.value = '';
+});
+
+loadPresetBtn.addEventListener('click', () => {
+  const name = presetSelect.value;
+  if (!name) return;
+  const all = listPresets();
+  if (all[name]) applyState(all[name]);
+});
+
+deletePresetBtn.addEventListener('click', () => {
+  const name = presetSelect.value;
+  if (!name) return;
+  deletePreset(name);
+  refreshPresetDropdown();
+});
+
+sharePresetBtn.addEventListener('click', () => {
+  const hash = stateToHash(collectState());
+  const url = window.location.origin + window.location.pathname + hash;
+  navigator.clipboard.writeText(url).then(() => {
+    sharePresetBtn.textContent = '✓ copied!';
+    setTimeout(() => { sharePresetBtn.textContent = '⇗ copy share link'; }, 2000);
+  }).catch(() => {
+    prompt('Copy this link:', url);
+  });
+});
+
+// Auto-load preset from URL hash on startup
+const hashState = stateFromHash();
+if (hashState) {
+  // defer until effect controls are mounted
+  requestAnimationFrame(() => {
+    applyState(hashState);
+    window.history.replaceState(null, '', window.location.pathname);
+  });
+}
 
 function mountEffectControls(){
   effectsList.innerHTML = '';

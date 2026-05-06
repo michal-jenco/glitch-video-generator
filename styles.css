@@ -161,10 +161,17 @@ button:disabled {
 }
 
 button.rec { color: var(--warn); border-color: var(--warn); }
-button.rec.recording {
+button.rec.recording,
+button.recording {
   background: var(--warn);
   color: #000;
   animation: blink 0.7s infinite;
+}
+
+#gifStatus {
+  font-size: 10px;
+  color: var(--accent2);
+  min-width: 36px;
 }
 @keyframes blink {
   50% { opacity: 0.55; }
