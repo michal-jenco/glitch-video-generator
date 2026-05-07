@@ -277,6 +277,7 @@ function collectState() {
     chainLocked,
     webcamFacing,
     gifDuration: +gifDuration.value,
+    lockedPasses: chaos.lockedPasses,
   });
 }
 
@@ -307,9 +308,13 @@ function applyState(state) {
   }
   if (state.gifDuration != null) gifDuration.value = state.gifDuration;
   if (state.chainLocked != null) {
-    if (state.chainLocked) {
-      // Defer locking until the chaos engine has populated its active list
-      // (setLocked on an empty active array would lock with zero effects)
+    if (state.chainLocked && state.lockedPasses?.length) {
+      // Restore the exact pass snapshot — reproduces the same visual
+      chainLocked = true;
+      lockChainBtn.textContent = 'unlock chain';
+      chaos.restoreLockedPasses(state.lockedPasses);
+    } else if (state.chainLocked) {
+      // No saved passes (old preset) — defer until chaos engine populates
       chainLocked = false;
       lockChainBtn.textContent = 'lock chain';
       chaos.setLocked(false);
@@ -318,7 +323,7 @@ function applyState(state) {
         lockChainBtn.textContent = 'unlock chain';
         chaos.setLocked(true, performance.now() / 1000);
       }, 400);
-    } else if (chainLocked) {
+    } else {
       chainLocked = false;
       lockChainBtn.textContent = 'lock chain';
       chaos.setLocked(false);

@@ -67,6 +67,13 @@ export class ChaosEngine {
       this.lockedPasses = null;
     }
   }
+
+  // Restore a previously serialised lockedPasses snapshot directly.
+  restoreLockedPasses(passes){
+    this.locked = true;
+    this.lockedPasses = passes.map(p => ({ ...p, baseIntensity: p.baseIntensity ?? p.intensity }));
+    this._refreshLockedPassesFromConfig();
+  }
   setEffectConfig(name, cfg = {}){
     const prev = this.effectConfig.get(name) || { enabled: true, weight: 1, amount: 1 };
     const next = {
