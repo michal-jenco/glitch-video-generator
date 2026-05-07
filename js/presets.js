@@ -36,14 +36,19 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
   };
 }
 
-// URL hash encode / decode (no name included — just the params)
+// URL hash encode / decode — URL-safe base64 (no +/= in the hash)
 export function stateToHash(state) {
   const { savedAt, ...rest } = state;
-  return '#p=' + btoa(unescape(encodeURIComponent(JSON.stringify(rest))));
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(rest))))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return '#p=' + b64;
 }
 
 export function stateFromHash(hash = window.location.hash) {
   if (!hash.startsWith('#p=')) return null;
-  try { return JSON.parse(decodeURIComponent(escape(atob(hash.slice(3))))); }
-  catch { return null; }
+  try {
+    let b64 = hash.slice(3).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    return JSON.parse(decodeURIComponent(escape(atob(b64))));
+  } catch { return null; }
 }
