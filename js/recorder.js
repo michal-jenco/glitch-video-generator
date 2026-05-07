@@ -33,10 +33,12 @@ export class Recorder {
     this.recorder.onstop = () => this._finish();
     this.recorder.start(250);
     this.startedAt = performance.now();
+    this.lastDurationSec = 0;
   }
 
   stop(){
     if (!this.isRecording()) return;
+    this.lastDurationSec = (performance.now() - this.startedAt) / 1000;
     this.recorder.stop();
   }
 
@@ -109,9 +111,20 @@ export class Recorder {
     return true;
   }
 
+  // ffmpeg.wasm's `progress` is bogus when input lacks duration metadata
+  // (which MediaRecorder webm always does). Derive it from `time` (current
+  // encoding pos in microseconds) and the recorded wall-clock duration.
+  _estimateProgress(progress, time){
+    const dur = this.lastDurationSec;
+    if (dur > 0 && Number.isFinite(time) && time >= 0) {
+      return Math.max(0, Math.min(1, time / (dur * 1_000_000)));
+    }
+    return Number.isFinite(progress) && progress >= 0 && progress <= 1 ? progress : 0;
+  }
+
   async _getFfmpeg(onProgress = null){
     if (this.ffmpeg && this.ffmpegLoaded) {
-      if (onProgress) this.ffmpeg.on('progress', ({ progress }) => onProgress(progress));
+      if (onProgress) this.ffmpeg.on('progress', ({ progress, time }) => onProgress(this._estimateProgress(progress, time)));
       return this.ffmpeg;
     }
 
