@@ -43,7 +43,6 @@ Current shader effects include:
 - `ascii`
 - `jpegblocks`
 - `interlace`
-- `kaleido`
 - `voronoi`
 - `band`
 - `echo`

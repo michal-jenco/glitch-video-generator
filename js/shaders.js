@@ -258,20 +258,6 @@ void main(){
 }
 `;
 
-// 14. Kaleidoscope
-const FX_KALEIDO = HEAD + `
-void main(){
-  float seg = floor(3.0 + uParam0*9.0);
-  vec2 c = vUv - 0.5;
-  float r = length(c);
-  float a = atan(c.y, c.x);
-  float twoPi = 6.28318;
-  a = mod(a, twoPi/seg);
-  a = abs(a - twoPi/seg*0.5);
-  vec2 uv = vec2(cos(a), sin(a))*r + 0.5;
-  outColor = texture(uTex, uv);
-}
-`;
 
 // 15. Voronoi shatter
 const FX_VORONOI = HEAD + `
@@ -453,7 +439,6 @@ export const EFFECTS = [
   { name: 'ascii',       src: FX_ASCII },
   { name: 'jpegblocks',  src: FX_BLOCKS },
   { name: 'interlace',   src: FX_INTERLACE },
-  { name: 'kaleido',     src: FX_KALEIDO },
   { name: 'voronoi',     src: FX_VORONOI },
   { name: 'band',        src: FX_BAND },
   { name: 'echo',        src: FX_ECHO },
