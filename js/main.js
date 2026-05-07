@@ -274,6 +274,9 @@ function collectState() {
     effectConfig: chaos.effectConfig,
     source: currentSourceKind(),
     proceduralPattern: $('proceduralPattern').value,
+    chainLocked,
+    webcamFacing,
+    gifDuration: +gifDuration.value,
   });
 }
 
@@ -295,11 +298,18 @@ function applyState(state) {
   }
   if (state.source && state.source !== 'upload') {
     const radio = document.querySelector(`input[name="source"][value="${state.source}"]`);
-    if (radio) { radio.checked = true; }
+    if (radio) radio.checked = true;
     if (state.source === 'procedural' && state.proceduralPattern) {
       $('proceduralPattern').value = state.proceduralPattern;
     }
-    switchSource(state.source, null);
+    if (state.source === 'webcam' && state.webcamFacing) webcamFacing = state.webcamFacing;
+    switchSource(state.source, state.webcamFacing || null);
+  }
+  if (state.gifDuration != null) gifDuration.value = state.gifDuration;
+  if (state.chainLocked != null && state.chainLocked !== chainLocked) {
+    chainLocked = state.chainLocked;
+    lockChainBtn.textContent = chainLocked ? 'unlock chain' : 'lock chain';
+    chaos.setLocked(chainLocked, performance.now() / 1000);
   }
   syncOutputs();
 }

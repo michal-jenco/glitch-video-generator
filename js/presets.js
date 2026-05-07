@@ -21,7 +21,7 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern, chainLocked, webcamFacing, gifDuration }) {
   return {
     seed,
     intensity: +intensity,
@@ -29,6 +29,9 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
     maxFx: +maxFx,
     source,
     proceduralPattern,
+    chainLocked: !!chainLocked,
+    webcamFacing: webcamFacing || 'user',
+    gifDuration: +gifDuration || 3,
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
 }
