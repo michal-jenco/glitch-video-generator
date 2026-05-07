@@ -179,8 +179,14 @@ exportMp4Btn.addEventListener('click', async () => {
   const base = seedEl.value.replace(/\s+/g, '_');
   recStatus.textContent = 'mp4 loading core...';
   try {
+    let lastPct = 0;
     const ok = await recorder.exportMp4(base, (progress) => {
-      recStatus.textContent = `mp4 ${(progress * 100).toFixed(0)}%`;
+      // ffmpeg.wasm reports bogus values (negative or >>1) when input webm
+      // lacks duration metadata; clamp and keep it monotonic.
+      const pct = Math.max(lastPct, Math.min(99, Math.round(progress * 100)));
+      if (!isFinite(pct) || pct < 0) return;
+      lastPct = pct;
+      recStatus.textContent = `mp4 ${pct}%`;
     }, (status) => {
       recStatus.textContent = status;
     });
