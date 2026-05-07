@@ -306,10 +306,23 @@ function applyState(state) {
     switchSource(state.source, state.webcamFacing || null);
   }
   if (state.gifDuration != null) gifDuration.value = state.gifDuration;
-  if (state.chainLocked != null && state.chainLocked !== chainLocked) {
-    chainLocked = state.chainLocked;
-    lockChainBtn.textContent = chainLocked ? 'unlock chain' : 'lock chain';
-    chaos.setLocked(chainLocked, performance.now() / 1000);
+  if (state.chainLocked != null) {
+    if (state.chainLocked) {
+      // Defer locking until the chaos engine has populated its active list
+      // (setLocked on an empty active array would lock with zero effects)
+      chainLocked = false;
+      lockChainBtn.textContent = 'lock chain';
+      chaos.setLocked(false);
+      setTimeout(() => {
+        chainLocked = true;
+        lockChainBtn.textContent = 'unlock chain';
+        chaos.setLocked(true, performance.now() / 1000);
+      }, 400);
+    } else if (chainLocked) {
+      chainLocked = false;
+      lockChainBtn.textContent = 'lock chain';
+      chaos.setLocked(false);
+    }
   }
   syncOutputs();
 }
