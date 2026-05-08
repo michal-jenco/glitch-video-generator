@@ -44,9 +44,10 @@ export class VideoSource {
 
 export class WebcamSource {
   // facingMode: 'user' (front) | 'environment' (back)
-  constructor(facingMode = 'user'){
+  constructor(facingMode = 'user', orientation = 'landscape'){
     this.facingMode = facingMode;
     this.mirrored = (facingMode === 'user');
+    this._orientation = orientation;
     this.video = document.createElement('video');
     this.video.muted = true;
     this.video.playsInline = true;
@@ -54,20 +55,40 @@ export class WebcamSource {
     this.stream = null;
     this.mirrorCanvas = document.createElement('canvas');
     this.mirrorCtx = this.mirrorCanvas.getContext('2d');
-    const constraints = { video: { width: 1280, height: 720, facingMode }, audio: false };
-    navigator.mediaDevices.getUserMedia(constraints)
+    this._acquire(orientation);
+  }
+
+  static _constraintsFor(facingMode, orientation){
+    const long = 1280, short = 720;
+    const w = orientation === 'portrait' ? short : long;
+    const h = orientation === 'portrait' ? long : short;
+    return { video: { width: { ideal: w }, height: { ideal: h }, facingMode }, audio: false };
+  }
+
+  _acquire(orientation){
+    const constraints = WebcamSource._constraintsFor(this.facingMode, orientation);
+    return navigator.mediaDevices.getUserMedia(constraints)
       .then(stream => {
         this.stream = stream;
+        this._orientation = orientation;
         this.video.srcObject = stream;
-        this.video.addEventListener('loadedmetadata', () => {
-          this.video.play().catch(()=>{});
-          this._ready = true;
+        return new Promise(resolve => {
+          const done = () => { this.video.play().catch(()=>{}); this._ready = true; resolve(); };
+          if (this.video.readyState >= 1) done();
+          else this.video.addEventListener('loadedmetadata', done, { once: true });
         });
       })
       .catch(err => {
         console.error('webcam', err);
-        alert('Webcam denied or unavailable: ' + err.message);
+        if (!this._ready) alert('Webcam denied or unavailable: ' + err.message);
       });
+  }
+
+  async setOrientation(orientation){
+    if (orientation === this._orientation) return;
+    if (this.stream) for (const t of this.stream.getTracks()) t.stop();
+    this._ready = false;
+    await this._acquire(orientation);
   }
 
   // Returns true if flipping cameras is likely to work on this device.

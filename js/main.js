@@ -11,7 +11,7 @@ const chaos = new ChaosEngine({ seed: parseSeed('0xCAFEBABE') });
 const recorder = new Recorder(canvas);
 const gifExporter = new GifExporter(canvas);
 
-let source = new WebcamSource('user');
+let source = new WebcamSource('user', (typeof matchMedia === 'function' && matchMedia('(orientation: portrait)').matches) ? 'portrait' : 'landscape');
 // sync row visibility to match the default webcam selection
 document.addEventListener('DOMContentLoaded', () => {}, { once: true });
 // rows aren't hidden by CSS default — fix initial state inline
@@ -86,6 +86,44 @@ function resize(){
 }
 window.addEventListener('resize', resize);
 resize();
+
+// ---------- orientation ----------
+function getOrientation(){
+  // Prefer viewport-based detection — screen.orientation reports the device
+  // screen, not our (possibly windowed/iframed) viewport.
+  if (typeof matchMedia === 'function'){
+    if (matchMedia('(orientation: portrait)').matches) return 'portrait';
+    if (matchMedia('(orientation: landscape)').matches) return 'landscape';
+  }
+  const t = (typeof screen !== 'undefined' && screen.orientation && screen.orientation.type) || '';
+  if (t.startsWith('portrait')) return 'portrait';
+  return 'landscape';
+}
+
+let _webcamReorientTimer = null;
+function applyOrientationLayout(){
+  const o = getOrientation();
+  document.body.classList.toggle('portrait', o === 'portrait');
+  document.body.classList.toggle('landscape', o === 'landscape');
+  resize();
+  if (typeof source !== 'undefined' && source instanceof WebcamSource){
+    clearTimeout(_webcamReorientTimer);
+    _webcamReorientTimer = setTimeout(() => {
+      if (source instanceof WebcamSource) source.setOrientation(o);
+    }, 250);
+  }
+}
+
+if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.addEventListener){
+  screen.orientation.addEventListener('change', applyOrientationLayout);
+}
+if (typeof matchMedia === 'function'){
+  const mq = matchMedia('(orientation: portrait)');
+  if (mq.addEventListener) mq.addEventListener('change', applyOrientationLayout);
+  else if (mq.addListener) mq.addListener(applyOrientationLayout);
+}
+window.addEventListener('resize', applyOrientationLayout);
+applyOrientationLayout();
 
 // ---------- UI wiring ----------
 const $ = id => document.getElementById(id);
@@ -195,7 +233,7 @@ function switchSource(kind, facingMode){
     source.setPattern($('proceduralPattern').value);
   } else if (kind === 'webcam'){
     webcamFacing = facingMode || webcamFacing;
-    source = new WebcamSource(webcamFacing);
+    source = new WebcamSource(webcamFacing, getOrientation());
     if (webcamMirror !== null) source.setMirror(webcamMirror);
     updateMirrorBtn();
     // Show flip button only when device has multiple cameras

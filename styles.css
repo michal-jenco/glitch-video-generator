@@ -70,6 +70,20 @@ label:has(> select) > select { width: auto; }
 }
 #panel.hidden { transform: translateX(380px); }
 
+body.portrait #panel {
+  top: auto;
+  right: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: auto;
+  max-height: 50vh;
+}
+body.portrait #panel.hidden { transform: translateY(120%); }
+body.portrait #panelToggle {
+  right: auto;
+  left: 12px;
+}
+
 #panel header h1 {
   margin: 0;
   font-size: 14px;
