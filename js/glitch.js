@@ -168,7 +168,12 @@ export class ChaosEngine {
     }
 
     // swap-in jitter on chaos timer
-    const swapInterval = Math.max(0.15, 1.5 - this.chaosRate*1.4);
+    // Piecewise so the slider passes through the original anchor (0.5 -> 0.8s):
+    //   0.0 -> 5.0s, 0.5 -> 0.8s, 1.0 -> 0.15s.
+    const r = this.chaosRate;
+    const swapInterval = r <= 0.5
+      ? 5.0 - 8.4 * r
+      : 0.8 - 1.3 * (r - 0.5);
     if (time - this.lastSwap > swapInterval) {
       this.lastSwap = time;
       if (this.rng() < 0.3 + this.chaosRate*0.5 && this.active.length){
