@@ -22,19 +22,49 @@ const TARGET_FPS = 60;
 const KEYFRAME_INTERVAL_FRAMES = 60; // every ~1s at 60fps
 const BITRATE = 12_000_000;
 
-// Cache so we don't probe codec support repeatedly.
+// Cache so we don't probe repeatedly.
 let cachedSupport = null;
 
+// Do a full end-to-end probe: configure an encoder, push a single test
+// frame, flush, and see if a chunk with decoderConfig actually comes out.
+// `isConfigSupported` alone lies on Firefox — it returns true even when
+// the OS lacks an AVC encoder, so configure() succeeds but the first
+// encode() never produces output. The end-to-end check catches this.
 export async function webcodecsMp4Supported(){
   if (cachedSupport != null) return cachedSupport;
-  if (typeof VideoEncoder === 'undefined') return (cachedSupport = false);
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return (cachedSupport = false);
+  }
   for (const codec of AVC_CODECS){
     try {
-      const r = await VideoEncoder.isConfigSupported({
-        codec, width: 640, height: 360, bitrate: BITRATE, framerate: TARGET_FPS,
+      const cfg = await VideoEncoder.isConfigSupported({
+        codec, width: 320, height: 240, bitrate: BITRATE, framerate: TARGET_FPS,
       });
-      if (r?.supported) return (cachedSupport = true);
-    } catch { /* try next */ }
+      if (!cfg?.supported) continue;
+
+      let gotChunk = false;
+      let gotDecoderConfig = false;
+      const enc = new VideoEncoder({
+        output: (_chunk, meta) => {
+          gotChunk = true;
+          if (meta?.decoderConfig) gotDecoderConfig = true;
+        },
+        error: () => { /* swallow; outer catch handles */ },
+      });
+      enc.configure(cfg.config || { codec, width: 320, height: 240, bitrate: BITRATE, framerate: TARGET_FPS });
+
+      // 320x240 RGBA frame so we don't depend on a canvas being ready.
+      const buf = new Uint8ClampedArray(320 * 240 * 4);
+      const probeFrame = new VideoFrame(buf, {
+        format: 'RGBA', codedWidth: 320, codedHeight: 240, timestamp: 0,
+      });
+      enc.encode(probeFrame, { keyFrame: true });
+      probeFrame.close();
+      await enc.flush();
+      enc.close();
+
+      if (gotChunk && gotDecoderConfig) return (cachedSupport = true);
+    } catch { /* try next codec */ }
   }
   return (cachedSupport = false);
 }

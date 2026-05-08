@@ -224,22 +224,38 @@ recBtn.addEventListener('click', async () => {
   }
 });
 
-// Hide the WEBM button when the recorder will produce MP4 directly (either
-// via native MediaRecorder mp4 OR the WebCodecs path). Show the fallback
-// hint only when we're truly stuck with the slow ffmpeg transcode.
+const fallbackHintEl = $('mp4FallbackHint');
+
+// Show the slow-ffmpeg hint only when we're certain we'll fall through to
+// the ffmpeg path. For 'webcodecs' we DON'T pre-hide WEBM, because Firefox
+// can claim WebCodecs support and then fail at actual encode time — driving
+// UI from detection alone leaves users with slow MP4 and no fast escape.
+// We update the buttons based on the recording's REAL container instead.
 detectRecorderMode().then(mode => {
-  if (mode === 'native-mp4' || mode === 'webcodecs'){
+  if (mode === 'native-mp4'){
+    // Reliable: every native-mp4 recording will be mp4. Hide WEBM up front.
     downloadBtn.style.display = 'none';
-  } else {
-    const hint = $('mp4FallbackHint');
-    if (hint) hint.style.display = '';
+  } else if (mode === 'webm-ffmpeg'){
+    if (fallbackHintEl) fallbackHintEl.style.display = '';
   }
+  // 'webcodecs' case: leave both buttons visible, decide after the recording.
 });
 
 recorder.onFinished = () => {
   downloadBtn.disabled = !recorder.hasRecording();
   exportMp4Btn.disabled = !recorder.hasRecording();
   recStatus.textContent = 'saved';
+  // Trust-but-verify: pick UI based on what actually got recorded.
+  const container = recorder.recordedContainer();
+  if (container === 'mp4'){
+    downloadBtn.style.display = 'none';
+    if (fallbackHintEl) fallbackHintEl.style.display = 'none';
+  } else if (container === 'webm'){
+    // WebCodecs failed (or we were on the ffmpeg tier all along). Restore
+    // WEBM as the fast option and warn that MP4 will be slow.
+    downloadBtn.style.display = '';
+    if (fallbackHintEl) fallbackHintEl.style.display = '';
+  }
 };
 
 downloadBtn.addEventListener('click', () => {
