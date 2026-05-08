@@ -1,7 +1,7 @@
 import { Pipeline, EFFECTS } from './shaders.js';
 import { ChaosEngine, parseSeed } from './glitch.js';
 import { ProceduralSource, ImageSource, VideoSource, WebcamSource } from './sources.js';
-import { Recorder } from './recorder.js';
+import { Recorder, nativeMp4Supported } from './recorder.js';
 import { GifExporter, downloadBlob } from './gif-exporter.js';
 import { listPresets, savePreset, deletePreset, captureState, stateToHash, stateFromHash } from './presets.js';
 
@@ -219,6 +219,13 @@ recBtn.addEventListener('click', () => {
     recStatus.textContent = 'recording...';
   }
 });
+
+// When the browser records native MP4, the WEBM button is meaningless (the
+// blob already IS mp4) and the "MP4" button is just an instant download.
+const NATIVE_MP4 = nativeMp4Supported();
+if (NATIVE_MP4) {
+  downloadBtn.style.display = 'none';
+}
 
 recorder.onFinished = () => {
   downloadBtn.disabled = !recorder.hasRecording();

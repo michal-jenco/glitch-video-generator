@@ -1,5 +1,32 @@
 // MediaRecorder wrapper around canvas.captureStream.
 
+// Prefer native MP4 (hardware H.264) when the browser exposes it via
+// MediaRecorder — Chromium >=129 and Safari iOS >=17 ship this. Falls back
+// to webm everywhere else (Firefox, older browsers).
+const RECORDER_CANDIDATES = [
+  { mime: 'video/mp4;codecs=avc1.42E01F', ext: 'mp4', container: 'mp4' },
+  { mime: 'video/mp4;codecs=avc1.4D401F', ext: 'mp4', container: 'mp4' },
+  { mime: 'video/mp4;codecs=h264',        ext: 'mp4', container: 'mp4' },
+  { mime: 'video/mp4',                    ext: 'mp4', container: 'mp4' },
+  { mime: 'video/webm;codecs=vp9',        ext: 'webm', container: 'webm' },
+  { mime: 'video/webm;codecs=vp8',        ext: 'webm', container: 'webm' },
+  { mime: 'video/webm',                   ext: 'webm', container: 'webm' },
+];
+
+function pickRecorderFormat(){
+  for (const c of RECORDER_CANDIDATES){
+    if (MediaRecorder.isTypeSupported(c.mime)) return c;
+  }
+  return null;
+}
+
+// Whether the browser will record native MP4 directly — exposed so the UI
+// can collapse the WEBM/MP4 buttons into a single instant-download path.
+export function nativeMp4Supported(){
+  const f = pickRecorderFormat();
+  return !!(f && f.container === 'mp4');
+}
+
 export class Recorder {
   constructor(canvas){
     this.canvas = canvas;
@@ -9,6 +36,7 @@ export class Recorder {
     this.lastBlob = null;
     this.lastObjectUrl = null;
     this.lastTimestamp = null;
+    this.recordedFormat = null; // { mime, ext, container } of the active capture
     this.onFinished = null;
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
@@ -16,19 +44,17 @@ export class Recorder {
 
   isRecording(){ return this.recorder && this.recorder.state === 'recording'; }
 
+  // What the last (or in-flight) recording is/was — 'mp4' or 'webm'.
+  recordedContainer(){ return this.recordedFormat?.container || null; }
+
   start(){
     if (this.isRecording()) return;
     const stream = this.canvas.captureStream(60);
-    const candidates = [
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
-      'video/webm',
-    ];
-    let mime = '';
-    for (const c of candidates){ if (MediaRecorder.isTypeSupported(c)){ mime = c; break; } }
-    if (!mime){ alert('MediaRecorder/webm not supported in this browser'); return; }
+    const fmt = pickRecorderFormat();
+    if (!fmt){ alert('MediaRecorder not supported in this browser'); return; }
+    this.recordedFormat = fmt;
     this.chunks = [];
-    this.recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+    this.recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 12_000_000 });
     this.recorder.ondataavailable = e => { if (e.data && e.data.size) this.chunks.push(e.data); };
     this.recorder.onstop = () => this._finish();
     this.recorder.start(250);
@@ -48,7 +74,8 @@ export class Recorder {
   }
 
   _finish(){
-    this.lastBlob = new Blob(this.chunks, { type: 'video/webm' });
+    const blobType = this.recordedFormat?.container === 'mp4' ? 'video/mp4' : 'video/webm';
+    this.lastBlob = new Blob(this.chunks, { type: blobType });
     this.lastTimestamp = new Date().toISOString().replace(/[:.]/g,'-');
     if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
     this.lastObjectUrl = URL.createObjectURL(this.lastBlob);
@@ -61,9 +88,10 @@ export class Recorder {
 
   download(seed = 'capture'){
     if (!this.lastBlob || !this.lastObjectUrl) return false;
+    const ext = this.recordedFormat?.ext || 'webm';
     const a = document.createElement('a');
     a.href = this.lastObjectUrl;
-    a.download = `glitch-${seed}-${this.lastTimestamp || 'recording'}.webm`;
+    a.download = `glitch-${seed}-${this.lastTimestamp || 'recording'}.${ext}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -72,6 +100,13 @@ export class Recorder {
 
   async exportMp4(seed = 'capture', onProgress = null, onStatus = null){
     if (!this.lastBlob) return false;
+
+    // Already recorded as MP4 natively — just download the blob.
+    if (this.recordedFormat?.container === 'mp4'){
+      if (onProgress) onProgress(1);
+      if (onStatus) onStatus('mp4 ready');
+      return this.download(seed);
+    }
 
     if (onStatus) onStatus('mp4 loading core...');
     const ffmpeg = await this._getFfmpeg(onProgress);
