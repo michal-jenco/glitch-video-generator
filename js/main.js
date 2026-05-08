@@ -1,7 +1,7 @@
 import { Pipeline, EFFECTS } from './shaders.js';
 import { ChaosEngine, parseSeed } from './glitch.js';
 import { ProceduralSource, ImageSource, VideoSource, WebcamSource } from './sources.js';
-import { Recorder, nativeMp4Supported } from './recorder.js';
+import { Recorder, detectRecorderMode } from './recorder.js';
 import { GifExporter, downloadBlob } from './gif-exporter.js';
 import { listPresets, savePreset, deletePreset, captureState, stateToHash, stateFromHash } from './presets.js';
 
@@ -205,14 +205,18 @@ flipCamBtn.addEventListener('click', () => {
   switchSource('webcam', webcamFacing);
 });
 
-recBtn.addEventListener('click', () => {
+recBtn.addEventListener('click', async () => {
   if (recorder.isRecording()){
-    recorder.stop();
+    recBtn.disabled = true;
+    await recorder.stop();
+    recBtn.disabled = false;
     recBtn.classList.remove('recording');
     recBtn.textContent = '● REC';
     recStatus.textContent = 'saved';
   } else {
-    recorder.start();
+    recBtn.disabled = true;
+    try { await recorder.start(); }
+    finally { recBtn.disabled = false; }
     recBtn.classList.add('recording');
     recBtn.textContent = '■ STOP';
     exportMp4Btn.disabled = true;
@@ -220,15 +224,17 @@ recBtn.addEventListener('click', () => {
   }
 });
 
-// When the browser records native MP4, the WEBM button is meaningless (the
-// blob already IS mp4) and the "MP4" button is just an instant download.
-const NATIVE_MP4 = nativeMp4Supported();
-if (NATIVE_MP4) {
-  downloadBtn.style.display = 'none';
-} else {
-  const hint = $('mp4FallbackHint');
-  if (hint) hint.style.display = '';
-}
+// Hide the WEBM button when the recorder will produce MP4 directly (either
+// via native MediaRecorder mp4 OR the WebCodecs path). Show the fallback
+// hint only when we're truly stuck with the slow ffmpeg transcode.
+detectRecorderMode().then(mode => {
+  if (mode === 'native-mp4' || mode === 'webcodecs'){
+    downloadBtn.style.display = 'none';
+  } else {
+    const hint = $('mp4FallbackHint');
+    if (hint) hint.style.display = '';
+  }
+});
 
 recorder.onFinished = () => {
   downloadBtn.disabled = !recorder.hasRecording();

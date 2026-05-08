@@ -1,8 +1,10 @@
-// MediaRecorder wrapper around canvas.captureStream.
+// Three-tier MP4 recording strategy:
+//   1. MediaRecorder with native H.264 mp4 mime (Chromium >=129, Safari 17+)
+//   2. WebCodecs VideoEncoder + mp4-muxer (Firefox >=130, older Chrome/Safari)
+//   3. MediaRecorder webm + ffmpeg.wasm transcode (last-resort, slow)
 
-// Prefer native MP4 (hardware H.264) when the browser exposes it via
-// MediaRecorder — Chromium >=129 and Safari iOS >=17 ship this. Falls back
-// to webm everywhere else (Firefox, older browsers).
+import { WebCodecsRecorder, webcodecsMp4Supported } from './webcodecs-recorder.js';
+
 const RECORDER_CANDIDATES = [
   { mime: 'video/mp4;codecs=avc1.42E01F', ext: 'mp4', container: 'mp4' },
   { mime: 'video/mp4;codecs=avc1.4D401F', ext: 'mp4', container: 'mp4' },
@@ -20,17 +22,33 @@ function pickRecorderFormat(){
   return null;
 }
 
-// Whether the browser will record native MP4 directly — exposed so the UI
-// can collapse the WEBM/MP4 buttons into a single instant-download path.
+// Whether the browser will record native MP4 via MediaRecorder.
 export function nativeMp4Supported(){
   const f = pickRecorderFormat();
   return !!(f && f.container === 'mp4');
+}
+
+// Probe both tiers async; cache the best mode. UI waits on this at startup
+// so by the time anyone hits REC the path is locked in.
+//   'native-mp4'  -> MediaRecorder mp4
+//   'webcodecs'   -> WebCodecsRecorder
+//   'webm-ffmpeg' -> MediaRecorder webm, ffmpeg on export
+let modePromise = null;
+export function detectRecorderMode(){
+  if (modePromise) return modePromise;
+  modePromise = (async () => {
+    if (nativeMp4Supported()) return 'native-mp4';
+    if (await webcodecsMp4Supported()) return 'webcodecs';
+    return 'webm-ffmpeg';
+  })();
+  return modePromise;
 }
 
 export class Recorder {
   constructor(canvas){
     this.canvas = canvas;
     this.recorder = null;
+    this.webcodecsRec = null;
     this.chunks = [];
     this.startedAt = 0;
     this.lastBlob = null;
@@ -40,15 +58,36 @@ export class Recorder {
     this.onFinished = null;
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
+    this.mode = 'webm-ffmpeg'; // overwritten by detectRecorderMode() at startup
   }
 
-  isRecording(){ return this.recorder && this.recorder.state === 'recording'; }
+  isRecording(){
+    if (this.webcodecsRec?.isRecording()) return true;
+    return this.recorder && this.recorder.state === 'recording';
+  }
 
-  // What the last (or in-flight) recording is/was — 'mp4' or 'webm'.
   recordedContainer(){ return this.recordedFormat?.container || null; }
 
-  start(){
+  async start(){
     if (this.isRecording()) return;
+    this.mode = await detectRecorderMode();
+
+    if (this.mode === 'webcodecs'){
+      this.webcodecsRec = new WebCodecsRecorder(this.canvas);
+      this.recordedFormat = { mime: 'video/mp4', ext: 'mp4', container: 'mp4' };
+      this.startedAt = performance.now();
+      this.lastDurationSec = 0;
+      try {
+        await this.webcodecsRec.start();
+      } catch (e) {
+        console.error('webcodecs start failed, falling back to webm', e);
+        this.webcodecsRec = null;
+        this.mode = 'webm-ffmpeg';
+        // fall through to MediaRecorder path below
+      }
+      if (this.webcodecsRec) return;
+    }
+
     const stream = this.canvas.captureStream(60);
     const fmt = pickRecorderFormat();
     if (!fmt){ alert('MediaRecorder not supported in this browser'); return; }
@@ -56,24 +95,41 @@ export class Recorder {
     this.chunks = [];
     this.recorder = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 12_000_000 });
     this.recorder.ondataavailable = e => { if (e.data && e.data.size) this.chunks.push(e.data); };
-    this.recorder.onstop = () => this._finish();
+    this.recorder.onstop = () => this._finishMediaRecorder();
     this.recorder.start(250);
     this.startedAt = performance.now();
     this.lastDurationSec = 0;
   }
 
-  stop(){
-    if (!this.isRecording()) return;
+  async stop(){
+    if (this.webcodecsRec?.isRecording()){
+      this.lastDurationSec = (performance.now() - this.startedAt) / 1000;
+      this.lastTimestamp = new Date().toISOString().replace(/[:.]/g,'-');
+      try {
+        const blob = await this.webcodecsRec.stop();
+        if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
+        this.lastBlob = blob;
+        this.lastObjectUrl = URL.createObjectURL(blob);
+      } catch (e) {
+        console.error('webcodecs stop failed', e);
+        this.lastBlob = null;
+      }
+      this.webcodecsRec = null;
+      if (typeof this.onFinished === 'function') this.onFinished(this.lastBlob);
+      return;
+    }
+    if (!this.recorder || this.recorder.state !== 'recording') return;
     this.lastDurationSec = (performance.now() - this.startedAt) / 1000;
     this.recorder.stop();
   }
 
   elapsedSeconds(){
-    if (!this.isRecording()) return 0;
+    if (this.webcodecsRec?.isRecording()) return this.webcodecsRec.elapsedSeconds();
+    if (!this.recorder || this.recorder.state !== 'recording') return 0;
     return (performance.now() - this.startedAt) / 1000;
   }
 
-  _finish(){
+  _finishMediaRecorder(){
     const blobType = this.recordedFormat?.container === 'mp4' ? 'video/mp4' : 'video/webm';
     this.lastBlob = new Blob(this.chunks, { type: blobType });
     this.lastTimestamp = new Date().toISOString().replace(/[:.]/g,'-');
