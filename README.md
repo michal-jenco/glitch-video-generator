@@ -16,8 +16,11 @@ Static WebGL glitch lab for generating chaotic visuals from webcam, uploads, or 
 - Effect utility buttons: `enable all`, `untoggle all`, `rand toggles`, `rand params`
 - Session controls: `pause`, `lock chain` (freeze pipeline order while still allowing live amt tweaks), randomize seed
 - **Recording & export:**
-  - `● REC` / `■ STOP` → `↓ WEBM` (MediaRecorder, vp9/vp8)
-  - `↓ MP4` — in-browser transcode via bundled ffmpeg.wasm (works on GitHub Pages, no SharedArrayBuffer needed)
+  - `● REC` / `■ STOP` triggers a three-tier MP4 strategy auto-selected at startup:
+    1. **Native `MediaRecorder` MP4** (Chromium ≥ 129, Safari iOS 17+ / Safari macOS 17+) — hardware H.264, instant
+    2. **WebCodecs + mp4-muxer** (Firefox 130+ where the AVC encoder ships, older Chrome/Safari with WebCodecs) — hardware H.264, instant
+    3. **`MediaRecorder` WEBM + ffmpeg.wasm transcode** — last resort, ~5× clip-length to encode
+  - WEBM download is always available when the recording is webm (tier 3); hidden when the recording is already mp4 (tiers 1–2)
   - `● GIF` — captures live canvas at 12 fps, downscaled to 480 px wide; duration 2 / 3 / 5 / 8 s selectable
   - `📷 PNG` — instant full-resolution frame snapshot
 - **Preset system:**
@@ -69,12 +72,14 @@ Current shader effects include:
 │   ├── glitch.js        # chaos engine (seeded scheduling, bursts)
 │   ├── sources.js       # webcam, image, video source providers
 │   ├── procedural.js    # procedural pattern generators
-│   ├── recorder.js      # MediaRecorder wrapper + ffmpeg MP4 export
-│   ├── gif-exporter.js  # gif.js-based GIF capture
-│   └── presets.js       # localStorage presets + URL-hash sharing
+│   ├── recorder.js              # 3-tier recording dispatcher (mp4 / webcodecs / webm+ffmpeg)
+│   ├── webcodecs-recorder.js    # canvas → VideoEncoder (H.264) → mp4-muxer
+│   ├── gif-exporter.js          # gif.js-based GIF capture
+│   └── presets.js               # localStorage presets + URL-hash sharing
 └── vendor/
-    ├── ffmpeg/          # vendored ffmpeg.wasm (single-threaded)
-    └── gif.js/          # vendored gif.js + gif.worker.js
+    ├── ffmpeg/                  # vendored ffmpeg.wasm (single-threaded)
+    ├── gif.js/                  # vendored gif.js + gif.worker.js
+    └── mp4-muxer/               # vendored mp4-muxer 5.2.2 for WebCodecs path
 ```
 
 ## Run Locally
@@ -109,8 +114,9 @@ Open:
 ## Browser Notes
 
 - Primary target: **Chrome** (best WebGL2, MediaRecorder, and GIF worker support).
-- Safari: WebM recording may be limited depending on OS/codec version; MP4 export works.
-- MP4 export uses a vendored single-threaded ffmpeg.wasm — no `SharedArrayBuffer` or cross-origin isolation headers required, so it works on GitHub Pages as-is.
+- Safari: instant native MP4 from iOS 17 / macOS 17 onward.
+- **Firefox**: instant MP4 only when its WebCodecs H.264 encoder is present and works end-to-end. As of mid-2026 this is **not the case on most desktop Firefox builds** (especially macOS) — Mozilla ships the WebCodecs API but the AVC encoder is gated behind prefs and platform availability. Firefox **Android** is more likely to have a working hardware AVC encoder than Firefox **desktop** because mobile Firefox can lean on Android's `MediaCodec`. The app probes by actually pushing a test frame through the encoder at startup and only chooses the WebCodecs path if it produces a real chunk; otherwise it transparently falls back to WEBM + ffmpeg.wasm and shows the slower-encode hint.
+- The ffmpeg fallback is single-threaded — no `SharedArrayBuffer` or cross-origin isolation headers required, so it works on GitHub Pages as-is, but encoding takes several times the clip length.
 - GIF encoding runs in background web workers (gif.js); large durations on slow devices may take a moment.
 
 ## Camera Flip (Mobile)
