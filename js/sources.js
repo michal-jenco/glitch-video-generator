@@ -46,6 +46,7 @@ export class WebcamSource {
   // facingMode: 'user' (front) | 'environment' (back)
   constructor(facingMode = 'user'){
     this.facingMode = facingMode;
+    this.mirrored = (facingMode === 'user');
     this.video = document.createElement('video');
     this.video.muted = true;
     this.video.playsInline = true;
@@ -86,8 +87,10 @@ export class WebcamSource {
     } catch { return false; }
   }
   ready(){ return this._ready && this.video.readyState >= 2; }
+  setMirror(on){ this.mirrored = !!on; }
   frame(){
     if (!this.ready()) return this.video;
+    if (!this.mirrored) return this.video;
     const w = this.video.videoWidth || 1280;
     const h = this.video.videoHeight || 720;
     if (this.mirrorCanvas.width !== w || this.mirrorCanvas.height !== h){

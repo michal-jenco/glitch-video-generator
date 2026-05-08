@@ -7,7 +7,7 @@ Static WebGL glitch lab for generating chaotic visuals from webcam, uploads, or 
 - Full-window WebGL2 renderer with ping-pong framebuffers and feedback effects
 - **Default source: webcam** — opens camera on load
 - Source modes:
-  - `webcam` — mirrored preview; **⇄ flip cam** appears automatically on multi-camera devices (phones/tablets)
+  - `webcam` — mirrored preview by default; **⇋ mirror** toggles horizontal flip; **⇄ flip cam** appears automatically on multi-camera devices (phones/tablets)
   - `procedural` — noise, bars, scrolling error text, grid, circles, plasma, random rotation
   - `upload` — image or video file
 - Chaos engine with seeded randomness for reproducible sequences
@@ -122,6 +122,10 @@ Open:
 ## Camera Flip (Mobile)
 
 On devices with multiple cameras (phones, tablets) the **⇄ flip cam** button appears automatically when the webcam source is active. It toggles between front (`user`) and back (`environment`) camera and restarts the stream. Hidden on single-camera devices.
+
+## Mirror Toggle
+
+The **⇋ mirror** button horizontally flips the webcam image. Front camera defaults to mirrored (the typical selfie view); rear camera defaults to non-mirrored (matches what you see through the lens). Once clicked, the choice sticks until you flip cameras, which resets to the per-camera default.
 
 ## Preset Sharing
 

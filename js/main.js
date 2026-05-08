@@ -116,6 +116,7 @@ const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
 const webcamRow = $('webcamRow');
 const flipCamBtn = $('flipCamBtn');
+const mirrorBtn = $('mirrorBtn');
 const pauseBtn = $('pauseBtn');
 const lockChainBtn = $('lockChainBtn');
 const effectsList = $('effectsList');
@@ -177,6 +178,12 @@ $('fileInput').addEventListener('change', e => {
 });
 
 let webcamFacing = 'user'; // 'user' = front, 'environment' = back
+let webcamMirror = null;   // null = use facingMode default; otherwise sticky override
+
+function updateMirrorBtn(){
+  if (!(source instanceof WebcamSource)) return;
+  mirrorBtn.textContent = source.mirrored ? '⇋ mirror: on' : '⇋ mirror: off';
+}
 
 function switchSource(kind, facingMode){
   if (source.stop) source.stop();
@@ -189,6 +196,8 @@ function switchSource(kind, facingMode){
   } else if (kind === 'webcam'){
     webcamFacing = facingMode || webcamFacing;
     source = new WebcamSource(webcamFacing);
+    if (webcamMirror !== null) source.setMirror(webcamMirror);
+    updateMirrorBtn();
     // Show flip button only when device has multiple cameras
     WebcamSource.flipSupported().then(has => {
       flipCamBtn.style.display = has ? '' : 'none';
@@ -202,7 +211,15 @@ function switchSource(kind, facingMode){
 flipCamBtn.addEventListener('click', () => {
   webcamFacing = webcamFacing === 'user' ? 'environment' : 'user';
   flipCamBtn.textContent = webcamFacing === 'user' ? '⇄ flip cam' : '⇄ front cam';
+  webcamMirror = null; // reset to per-camera default on flip
   switchSource('webcam', webcamFacing);
+});
+
+mirrorBtn.addEventListener('click', () => {
+  if (!(source instanceof WebcamSource)) return;
+  source.setMirror(!source.mirrored);
+  webcamMirror = source.mirrored;
+  updateMirrorBtn();
 });
 
 recBtn.addEventListener('click', async () => {
