@@ -225,6 +225,9 @@ recBtn.addEventListener('click', () => {
 const NATIVE_MP4 = nativeMp4Supported();
 if (NATIVE_MP4) {
   downloadBtn.style.display = 'none';
+} else {
+  const hint = $('mp4FallbackHint');
+  if (hint) hint.style.display = '';
 }
 
 recorder.onFinished = () => {
