@@ -26,13 +26,62 @@ requestAnimationFrame(() => {
 });
 
 // ---------- resize ----------
+const ASPECT_RATIOS = {
+  'free': null,
+  '16:9': 16 / 9,
+  '9:16': 9 / 16,
+  '4:3': 4 / 3,
+  '3:4': 3 / 4,
+  '1:1': 1,
+  '21:9': 21 / 9,
+};
+const RES_CAPS = { 'auto': null, '480p': 480, '720p': 720, '1080p': 1080 };
+
+let aspectLock = 'free';
+let resolutionCap = 'auto';
+
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.floor(window.innerWidth * dpr);
-  const h = Math.floor(window.innerHeight * dpr);
+  const baseW = window.innerWidth * dpr;
+  const baseH = window.innerHeight * dpr;
+  const ratio = ASPECT_RATIOS[aspectLock] ?? null;
+
+  let w, h;
+  if (ratio == null) {
+    w = baseW; h = baseH;
+  } else if (baseW / baseH > ratio) {
+    h = baseH; w = baseH * ratio;
+  } else {
+    w = baseW; h = baseW / ratio;
+  }
+
+  const cap = RES_CAPS[resolutionCap] ?? null;
+  if (cap != null) {
+    const shortEdge = Math.min(w, h);
+    if (shortEdge > cap) {
+      const scale = cap / shortEdge;
+      w *= scale; h *= scale;
+    }
+  }
+
+  // Keep dims even — yuv420p MP4 encoding needs it.
+  w = Math.max(2, Math.floor(w / 2) * 2);
+  h = Math.max(2, Math.floor(h / 2) * 2);
+
   if (canvas.width !== w || canvas.height !== h){
     canvas.width = w; canvas.height = h;
     pipeline.resize(w, h);
+  }
+
+  const locked = ratio != null || cap != null;
+  if (locked) {
+    canvas.classList.add('locked');
+    canvas.style.width = (w / dpr) + 'px';
+    canvas.style.height = (h / dpr) + 'px';
+  } else {
+    canvas.classList.remove('locked');
+    canvas.style.width = '';
+    canvas.style.height = '';
   }
 }
 window.addEventListener('resize', resize);
@@ -47,6 +96,8 @@ const maxFxEl = $('maxFx'), maxFxOut = $('maxFxOut');
 const seedEl = $('seed');
 const fpsEl = $('fps');
 const activeFxEl = $('activeFx');
+const aspectLockEl = $('aspectLock');
+const resolutionCapEl = $('resolutionCap');
 const recBtn = $('recBtn');
 const downloadBtn = $('downloadBtn');
 const exportMp4Btn = $('exportMp4Btn');
@@ -99,6 +150,15 @@ $('reseed').addEventListener('click', () => {
   const v = '0x' + Math.floor(Math.random()*0xffffffff).toString(16).toUpperCase().padStart(8,'0');
   seedEl.value = v;
   chaos.setSeed(parseSeed(v));
+});
+
+aspectLockEl.addEventListener('change', () => {
+  aspectLock = aspectLockEl.value;
+  resize();
+});
+resolutionCapEl.addEventListener('change', () => {
+  resolutionCap = resolutionCapEl.value;
+  resize();
 });
 
 document.querySelectorAll('input[name="source"]').forEach(r => {
@@ -278,6 +338,8 @@ function collectState() {
     webcamFacing,
     gifDuration: +gifDuration.value,
     lockedPasses: chaos.lockedPasses,
+    aspectLock,
+    resolutionCap,
   });
 }
 
@@ -307,6 +369,15 @@ function applyState(state) {
     switchSource(state.source, state.webcamFacing || null);
   }
   if (state.gifDuration != null) gifDuration.value = state.gifDuration;
+  if (state.aspectLock && ASPECT_RATIOS[state.aspectLock] !== undefined) {
+    aspectLock = state.aspectLock;
+    aspectLockEl.value = aspectLock;
+  }
+  if (state.resolutionCap && RES_CAPS[state.resolutionCap] !== undefined) {
+    resolutionCap = state.resolutionCap;
+    resolutionCapEl.value = resolutionCap;
+  }
+  resize();
   if (state.chainLocked != null) {
     if (state.chainLocked && state.lockedPasses?.length) {
       // Restore the exact pass snapshot — reproduces the same visual

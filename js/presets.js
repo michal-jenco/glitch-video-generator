@@ -27,7 +27,7 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap }) {
   return {
     seed,
     intensity: +intensity,
@@ -39,6 +39,8 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
     webcamFacing: webcamFacing || 'user',
     gifDuration: +gifDuration || 3,
     lockedPasses: chainLocked ? (lockedPasses || null) : null,
+    aspectLock: aspectLock || 'free',
+    resolutionCap: resolutionCap || 'auto',
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
 }
@@ -55,6 +57,8 @@ function compactState(state) {
   if (state.chainLocked) out.cl = 1;
   if (state.webcamFacing === 'environment') out.wf = 'e';
   if (state.gifDuration && +state.gifDuration !== 3) out.gd = +state.gifDuration;
+  if (state.aspectLock && state.aspectLock !== 'free') out.ar = state.aspectLock;
+  if (state.resolutionCap && state.resolutionCap !== 'auto') out.res = state.resolutionCap;
 
   // Effects: emit only those differing from defaults (enabled, amt=1, wgt=1).
   // Tuple [idx, enabled, amount, weight] with trailing defaults trimmed.
@@ -94,6 +98,8 @@ function expandState(c) {
     chainLocked: !!c.cl,
     webcamFacing: c.wf === 'e' ? 'environment' : 'user',
     gifDuration: c.gd ?? 3,
+    aspectLock: c.ar ?? 'free',
+    resolutionCap: c.res ?? 'auto',
     effects: FX_NAMES.map(name => ({ name, enabled: true, amount: 1, weight: 1 })),
   };
   for (const t of c.fx || []) {

@@ -64,6 +64,23 @@ const FX_COPY = HEAD + `
 void main(){ outColor = texture(uTex, vUv); }
 `;
 
+// object-fit: cover — crop the source to match dst aspect (no squish)
+const FX_FIT_COVER = HEAD + `
+uniform vec2 uSrcResolution;
+void main(){
+  vec2 dst = uResolution;
+  vec2 src = uSrcResolution;
+  vec2 scale = vec2(1.0);
+  if (src.x > 0.0 && src.y > 0.0 && dst.x > 0.0 && dst.y > 0.0) {
+    float dstA = dst.x / dst.y;
+    float srcA = src.x / src.y;
+    scale = (srcA > dstA) ? vec2(dstA / srcA, 1.0) : vec2(1.0, srcA / dstA);
+  }
+  vec2 uv = 0.5 + (vUv - 0.5) * scale;
+  outColor = texture(uTex, uv);
+}
+`;
+
 // 1. RGB chromatic aberration / channel split
 const FX_RGB = HEAD + `
 void main(){
@@ -498,6 +515,8 @@ export class Pipeline {
     // compile programs once
     this.programs = {};
     this.programs.copy = program(gl, VERT, FX_COPY);
+    this.programs.fitCover = program(gl, VERT, FX_FIT_COVER);
+    this.srcW = 1; this.srcH = 1;
     for (const fx of EFFECTS) {
       this.programs[fx.name] = program(gl, VERT, fx.src);
     }
@@ -546,6 +565,9 @@ export class Pipeline {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      const w = source.videoWidth || source.naturalWidth || source.width || 0;
+      const h = source.videoHeight || source.naturalHeight || source.height || 0;
+      if (w > 0 && h > 0) { this.srcW = w; this.srcH = h; }
     } catch (e) {
       // source not ready yet
     }
@@ -558,9 +580,21 @@ export class Pipeline {
     const W = this.canvas.width, H = this.canvas.height;
     gl.bindVertexArray(this.vao);
 
-    // pass 0: copy source -> fbA
+    // pass 0: copy source -> fbA, with object-fit: cover
     let read = this.fbA, write = this.fbB;
-    this._drawTo(read, this.programs.copy, this.srcTex, this.fbHistory.tex, time, seed, globalIntensity, [0,0,0,0]);
+    {
+      const prog = this.programs.fitCover;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, read.fb);
+      gl.viewport(0, 0, read.w, read.h);
+      gl.useProgram(prog);
+      this._setCommon(prog, time, seed, globalIntensity, [0,0,0,0]);
+      gl.uniform2f(gl.getUniformLocation(prog, 'uSrcResolution'), this.srcW, this.srcH);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.fbHistory.tex);
+      gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+      gl.uniform1i(gl.getUniformLocation(prog, 'uPrev'), 1);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
 
     for (let i=0; i<passes.length; i++){
       const pass = passes[i];

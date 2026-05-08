@@ -83,7 +83,7 @@ export class Recorder {
     if (onStatus) onStatus('mp4 encoding...');
     await ffmpeg.exec([
       '-i', inputName,
-      '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
       '-r', '30',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
@@ -123,15 +123,16 @@ export class Recorder {
   }
 
   async _getFfmpeg(onProgress = null){
-    if (this.ffmpeg && this.ffmpegLoaded) {
-      if (onProgress) this.ffmpeg.on('progress', ({ progress, time }) => onProgress(this._estimateProgress(progress, time)));
-      return this.ffmpeg;
-    }
+    this._onProgress = onProgress;
+    if (this.ffmpeg && this.ffmpegLoaded) return this.ffmpeg;
 
     const { FFmpeg } = await import('../vendor/ffmpeg/index.js');
 
     const ffmpeg = new FFmpeg();
-    if (onProgress) ffmpeg.on('progress', ({ progress }) => onProgress(progress));
+    ffmpeg.on('progress', ({ progress, time }) => {
+      const cb = this._onProgress;
+      if (cb) cb(this._estimateProgress(progress, time));
+    });
 
     // Derive the vendor path relative to this module so it works on any
     // hosting subpath (e.g. GitHub Pages /glitch-video-generator/).

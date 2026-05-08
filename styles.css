@@ -29,6 +29,17 @@ html, body {
   background: #000;
   image-rendering: pixelated;
 }
+#stage.locked {
+  inset: 0;
+  margin: auto;
+  width: auto; height: auto;
+}
+
+label:has(> select) {
+  gap: 6px;
+  opacity: 0.85;
+}
+label:has(> select) > select { width: auto; }
 
 #panelToggle {
   position: fixed; top: 12px; right: 12px;
