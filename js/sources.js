@@ -69,10 +69,18 @@ export class WebcamSource {
       });
   }
 
-  // Returns true if the device has more than one video input (i.e. a flip makes sense)
-  static async hasMultipleCameras(){
+  // Returns true if flipping cameras is likely to work on this device.
+  // On mobile, enumerateDevices() is unreliable: Android Chrome/Firefox often
+  // expose a single videoinput entry and switch cameras via facingMode, so
+  // counting devices hides the button on phones that clearly have two cameras.
+  // We treat facingMode support + a touch/mobile heuristic as the primary
+  // signal, and fall back to a >1 device count for desktops.
+  static async flipSupported(){
     try {
-      // Need at least one permission grant to see device labels/kinds
+      const supports = navigator.mediaDevices.getSupportedConstraints?.() || {};
+      const isMobile = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+        || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+      if (supports.facingMode && isMobile) return true;
       const devices = await navigator.mediaDevices.enumerateDevices();
       return devices.filter(d => d.kind === 'videoinput').length > 1;
     } catch { return false; }

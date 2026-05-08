@@ -20,7 +20,7 @@ requestAnimationFrame(() => {
   $('proceduralRow').classList.add('hidden');
   $('uploadRow').classList.add('hidden');
   $('webcamRow').classList.remove('hidden');
-  WebcamSource.hasMultipleCameras().then(has => {
+  WebcamSource.flipSupported().then(has => {
     $('flipCamBtn').style.display = has ? '' : 'none';
   });
 });
@@ -190,7 +190,7 @@ function switchSource(kind, facingMode){
     webcamFacing = facingMode || webcamFacing;
     source = new WebcamSource(webcamFacing);
     // Show flip button only when device has multiple cameras
-    WebcamSource.hasMultipleCameras().then(has => {
+    WebcamSource.flipSupported().then(has => {
       flipCamBtn.style.display = has ? '' : 'none';
     });
   } else {
