@@ -408,7 +408,7 @@ void main(){
   float t = mix(0.25, 0.85, uParam0);
   c = mix(c, 1.0 - c, step(t, c));
   c += (hash23(vUv*uResolution + floor(uTime*30.0)).rgb - 0.5) * 0.12 * uIntensity;
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -434,7 +434,7 @@ void main(){
   );
   vec3 c = texture(uTex, uv).rgb;
   c = mix(texture(uTex, vUv).rgb, c, uIntensity);
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -451,7 +451,7 @@ void main(){
   if (r < 0.08*uIntensity){
     c.rg = c.gr;
   }
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -535,7 +535,7 @@ void main(){
     float inDrop = rowsAway < dropLen ? 1.0 : 0.0;
     c = mix(vec3(luma), c, mix(1.0, f, uIntensity) * (1.0 - inDrop * 0.7));
   }
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -568,7 +568,7 @@ void main(){
   vec3 c = texture(uTex, uv).rgb;
   vec3 noiseCol = hash23(vUv * uResolution + floor(uTime * 30.0)) * 0.5;
   c = mix(c, mix(c, noiseCol, 0.6), inBand * uIntensity);
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -584,7 +584,7 @@ void main(){
   uv.x += inBand * noiseVal;
   vec3 c = texture(uTex, uv).rgb;
   c = mix(c, c * 0.7 + hash23(vUv * uResolution + floor(uTime * 20.0)) * 0.3, inBand * uIntensity);
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -678,7 +678,7 @@ void main(){
   float inTear = smoothstep(0.0, 0.01, abs(uv.y - tearLine)) * uParam2 * uIntensity;
   vec3 c = texture(uTex, uv).rgb;
   c = mix(c, c.brg, inTear);
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -725,7 +725,7 @@ void main(){
   glow = count > 0.0 ? glow / count : vec3(0.0);
   float intensity = mix(0.05, 0.9, uParam1 * uIntensity);
   c = mix(c, c + glow * intensity, uIntensity);
-  outColor = vec4(c, 1.0);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 `;
 
@@ -849,6 +849,206 @@ void main(){
 }
 `;
 
+// 46. Dissolve — image vertically dissolves into horizontal noise bands that scroll
+const FX_DISSOLVE = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float bandPos = fract(uTime * mix(0.05, 0.3, uParam2) + uSeed);
+  float bandWidth = mix(0.04, 0.5, uParam0);
+  float dist = abs(vUv.y - bandPos) / bandWidth;
+  float inZone = smoothstep(1.0, 0.6, dist) * smoothstep(0.0, 0.4, dist);
+  float n = hash21(vUv * uResolution + floor(uTime * 60.0));
+  float noiseFill = mix(n, hash11(vUv.x * 200.0 + uTime * 30.0), 0.5);
+  vec3 noiseCol = vec3(noiseFill) * mix(0.3, 1.5, uParam1);
+  vec3 dissolved = mix(c, noiseCol, inZone * uIntensity);
+  dissolved = mix(dissolved, dissolved.bgr * 0.8 + noiseCol * 0.2, inZone * uParam1 * uIntensity);
+  outColor = vec4(clamp(dissolved, 0.0, 1.0), 1.0);
+}
+`;
+
+// 47. Color bars — injected chroma carrier creates psychedelic horizontal color bands
+const FX_COLORBARS = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float lum = dot(c, vec3(0.299, 0.587, 0.114));
+  float row = floor(vUv.y * uResolution.y);
+  float bandCount = mix(4.0, 40.0, uParam0);
+  float band = floor(row / (uResolution.y / bandCount));
+  float hue = fract(band * 0.17 + uTime * mix(0.1, 1.5, uParam2) + lum * mix(0.0, 2.0, uParam3));
+  float intensity = mix(0.0, 1.0, uParam1 * uIntensity) * (0.5 + 0.5 * sin(row * 0.3 + uTime * 3.0));
+  vec3 barColor = hsv2rgb(vec3(hue, 0.9, 1.0));
+  float modulation = sin(row * 0.5 + uTime * 8.0) * mix(0.0, 0.5, uParam3);
+  c = mix(c, clamp(barColor * (lum + 0.5) + modulation, 0.0, 1.0), intensity);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+// 48. Channel swap — horizontal strips get RGB channels randomly remixed
+const FX_CHANNELSWAP = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float stripCount = mix(3.0, 20.0, uParam0);
+  float strip = floor(vUv.y * stripCount);
+  float r = hash11(strip * 13.7 + floor(uTime * mix(0.5, 8.0, uParam2)) + uSeed);
+  int mode = int(r * 5.0);
+  float blend = mix(0.0, 1.0, uParam1 * uIntensity) * step(0.5, hash11(strip + floor(uTime * 3.0) * 2.7));
+  vec3 swapped;
+  if (mode == 0) swapped = c.rgb;
+  else if (mode == 1) swapped = c.gbr;
+  else if (mode == 2) swapped = c.brg;
+  else if (mode == 3) swapped = c.bgr;
+  else swapped = 1.0 - c.rgb;
+  c = mix(c, swapped, blend);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 50. Luma crush + chroma blowout — extreme contrast + neon saturation
+const FX_CRUSHBLOW = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  vec3 hsv = rgb2hsv(c);
+  float crush = mix(0.0, 1.0, uParam0 * uIntensity);
+  float knee = mix(0.02, 0.3, uParam3);
+  hsv.z = smoothstep(0.0, knee, hsv.z) * smoothstep(1.0, 1.0 - knee, hsv.z) * (1.0 + crush * 0.3);
+  hsv.z = hsv.z * (1.0 + crush) - crush * 0.3;
+  hsv.z = clamp(hsv.z, 0.0, 1.0);
+  hsv.y = clamp(hsv.y * (1.0 + mix(0.0, 3.0, uParam1 * uIntensity)), 0.0, 1.0);
+  hsv.x = fract(hsv.x + mix(0.0, 0.3, uParam2 * uIntensity));
+  c = hsv2rgb(hsv);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+// 51. Slice shift — horizontal bands get displacement + independent color treatment
+const FX_SLICESHIFT = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float bands = mix(4.0, 30.0, uParam0);
+  float band = floor(vUv.y * bands + uTime * mix(0.3, 3.0, uParam3));
+  float r = hash11(band + uSeed + floor(uTime * 2.0));
+  float trigger = step(1.0 - uIntensity * 0.8, r);
+  float off = (hash11(band * 2.3 + uSeed) - 0.5) * mix(0.0, 0.7, uParam1) * trigger;
+  vec2 uv = vec2(clamp(vUv.x + off, 0.0, 1.0), vUv.y);
+  vec3 shifted = texture(uTex, uv).rgb;
+  float hueShift = hash11(band * 7.1 + uSeed + floor(uTime * 0.5)) * mix(0.0, 0.5, uParam2);
+  vec3 hsv = rgb2hsv(shifted);
+  hsv.x = fract(hsv.x + hueShift * uIntensity * trigger);
+  hsv.y = clamp(hsv.y * (1.0 + hueShift * uIntensity * trigger), 0.0, 1.0);
+  shifted = hsv2rgb(hsv);
+  outColor = vec4(clamp(mix(c, shifted, trigger * uIntensity), 0.0, 1.0), 1.0);
+}
+`;
+
+// 52. Noise wipe — structured noise wall rolls across the frame dissolving everything
+const FX_NOISEWIPE = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float wipePos = fract(uTime * mix(0.05, 0.35, uParam2) + uSeed * 0.1);
+  float edgeWidth = mix(0.03, 0.2, uParam0);
+  float behindWipe = smoothstep(wipePos - edgeWidth, wipePos, vUv.y);
+  float n1 = hash21(floor(vUv * uResolution / mix(2.0, 12.0, uParam3)) + floor(uTime * 30.0));
+  float n2 = hash11(floor(vUv.y * uResolution.y * 0.1) + floor(uTime * 15.0));
+  float n3 = sin(vUv.y * uResolution.y * 0.05 + uTime * 10.0) * 0.5 + 0.5;
+  float noiseVal = (n1 - 0.5) * 0.6 + (n2 - 0.5) * 0.3 + (n3 - 0.5) * 0.1;
+  vec3 noiseCol = vec3(noiseVal) * mix(0.5, 1.8, uParam1);
+  float corruption = hash21(vec2(floor(vUv.x * 20.0), floor(vUv.y * 10.0)) + floor(uTime * 20.0));
+  noiseCol = mix(noiseCol, noiseCol.bgr, corruption * behindWipe * uIntensity);
+  c = mix(c, noiseCol, behindWipe * uIntensity);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+// 53. Chroma smear plus — heavy horizontal chroma blur + per-row vertical displacement
+const FX_CHROMASMEARPLUS = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float row = floor(vUv.y * uResolution.y);
+  float yOff = (hash11(row + floor(uTime * 4.0) + uSeed) - 0.5) * mix(0.0, 0.15, uParam2 * uIntensity);
+  vec2 uv = vUv;
+  uv.y = clamp(vUv.y + yOff, 0.0, 1.0);
+  float smearRadius = mix(2.0, 25.0, uParam0);
+  float smearWidth = mix(0.002, 0.06, uParam0 * uIntensity);
+  vec3 smear = vec3(0.0);
+  float count = 0.0;
+  for (float x = -smearRadius; x <= smearRadius; x += 1.0){
+    float w = exp(-x * x / (smearRadius * smearRadius * 0.1));
+    smear += texture(uTex, clamp(uv + vec2(x * smearWidth * 0.3, 0.0), 0.0, 1.0)).rgb * w;
+    count += w;
+  }
+  smear = count > 0.0 ? smear / count : vec3(0.0);
+  float lum = dot(smear, vec3(0.299, 0.587, 0.114));
+  float chromaKeep = mix(1.0, 0.0, uParam1 * uIntensity);
+  vec3 sharpLuma = vec3(lum);
+  vec3 result = sharpLuma + (smear - sharpLuma) * chromaKeep;
+  result = clamp(result, 0.0, 1.0);
+  outColor = vec4(result, 1.0);
+}
+`;
+
+// 54. Hue spread — per-scanline hue rotation random walk creating horizontal gradients
+const FX_HUESPREAD = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float row = floor(vUv.y * uResolution.y);
+  float seed = uSeed;
+  float hue = 0.0;
+  for (float r = 0.0; r <= row; r += 1.0){
+    hue += (hash11(r * 1.7 + seed + floor(uTime * 0.2)) - 0.5) * 0.1;
+  }
+  hue = hue * mix(0.0, 3.0, uParam0 * uIntensity);
+  float drift = sin(uTime * 0.3 + seed) * mix(0.0, 0.4, uParam1 * uIntensity);
+  float saturation = mix(1.0, 2.5, uParam2 * uIntensity);
+  vec3 hsv = rgb2hsv(c);
+  hsv.x = fract(hsv.x + hue + drift);
+  hsv.y = clamp(hsv.y * saturation, 0.0, 1.0);
+  c = hsv2rgb(hsv);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+// 55. Frame rip — frame buffer tearing with time displacement
+const FX_FRAMERIP = HEAD + `
+void main(){
+  vec3 cur = texture(uTex, vUv).rgb;
+  float tearCount = mix(1.0, 8.0, uParam0);
+  float result = 0.0;
+  for (float t = 0.0; t < tearCount; t += 1.0){
+    float tearY = hash11(t * 3.3 + floor(uTime * mix(1.0, 10.0, uParam2)) + uSeed);
+    float tearWidth = mix(0.005, 0.06, uParam1);
+    float tearProximity = 1.0 - smoothstep(0.0, tearWidth, abs(vUv.y - tearY));
+    float offset = (hash11(t * 7.1 + uTime * 0.5) - 0.5) * mix(0.0, 0.4, uParam1 * uIntensity);
+    vec2 ripUv = vec2(fract(vUv.x + offset * tearProximity), vUv.y);
+    vec3 ripped = texture(uTex, ripUv).rgb;
+    float corr = hash11(t * 9.3 + uTime) * tearProximity;
+    ripped = mix(ripped, ripped.brg, corr * uIntensity);
+    result = max(result, tearProximity);
+    cur = mix(cur, ripped, tearProximity * uIntensity);
+  }
+  outColor = vec4(cur, 1.0);
+}
+`;
+
 export const EFFECTS = [
   { name: 'rgb_split',   src: FX_RGB, group: 'original',
     desc: 'Chromatic aberration: red and blue channels are pulled apart with a time-varying wobble, creating color-fringed edges.',
@@ -929,8 +1129,8 @@ export const EFFECTS = [
   { name: 'ntsc',        src: FX_NTSC, group: 'analogue',
     desc: 'NTSC composite artifacts: full composite video encode/decode cycle with dot crawl checkerboard patterns and cross-color rainbow banding on sharp edges.',
     controls: [
-      { label: 'Dot Crawl',  param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Strength of the moving checkerboard pattern on colored edges from chroma/luma crosstalk' },
-      { label: 'Rainbow',    param: 1, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Cross-color rainbow banding intensity on sharp luminance transitions' },
+      { label: 'Dot Crawl',  param: 0, min: 0, max: 1, step: 0.01, default: 0.65, desc: 'Strength of the moving checkerboard pattern on colored edges from chroma/luma crosstalk' },
+      { label: 'Rainbow',    param: 1, min: 0, max: 1, step: 0.01, default: 0.55, desc: 'Cross-color rainbow banding intensity on sharp luminance transitions' },
       { label: 'Chroma Blur',param: 2, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Horizontal chroma bandwidth limit — smears color info across the scanline' },
       { label: 'Phase Drift',param: 3, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Per-scanline color phase variation creating subtle hue flickering' },
       { label: 'Luma Bleed', param: 4, min: 0, max: 1, step: 0.01, default: 0.2, desc: 'Luminance signal leaking into chroma channels causing brightness-modulated color noise' },
@@ -944,36 +1144,36 @@ export const EFFECTS = [
   { name: 'chromadrop',  src: FX_CHROMADROP, group: 'analogue',
     desc: 'Chroma dropout: random scanlines lose color saturation entirely and revert to grayscale, simulating failing chroma decoder chips or tape degradation.',
     controls: [
-      { label: 'Drop Rate',  param: 0, min: 0, max: 1, step: 0.01, default: 0.15, desc: 'Probability of chroma loss per scanline — higher = more lines affected' },
+      { label: 'Drop Rate',  param: 0, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'Probability of chroma loss per scanline — higher = more lines affected' },
       { label: 'Line Length',param: 1, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How many consecutive scanlines the dropout spans' },
       { label: 'Edge Softness',param: 2, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'How soft the transition is between color and grayscale at dropout boundaries' },
     ] },
   { name: 'colorfringe', src: FX_COLORFRINGE, group: 'analogue',
     desc: 'Living chromatic aberration: RGB channels get animated per-scanline offsets that shift differently across the screen, breathing with independent sine waves.',
     controls: [
-      { label: 'R-Shift',    param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Red channel horizontal offset amplitude' },
-      { label: 'G-Shift',    param: 1, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Green channel horizontal offset amplitude' },
-      { label: 'B-Shift',    param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Blue channel horizontal offset amplitude' },
+      { label: 'R-Shift',    param: 0, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'Red channel horizontal offset amplitude' },
+      { label: 'G-Shift',    param: 1, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Green channel horizontal offset amplitude' },
+      { label: 'B-Shift',    param: 2, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Blue channel horizontal offset amplitude' },
       { label: 'Speed',      param: 3, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Animation speed of the per-scanline offset oscillation' },
     ] },
   { name: 'headswitch',  src: FX_HEANSWITCH, group: 'analogue',
     desc: 'VHS head switching band: the bottom few scanlines of the frame are distorted with horizontal displacement, color corruption, and noise — exactly where VHS playback heads alternate.',
     controls: [
-      { label: 'Band Height',param: 0, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'How many scanlines at the bottom of the frame are affected' },
+      { label: 'Band Height',param: 0, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'How many scanlines at the bottom of the frame are affected' },
       { label: 'Noise',      param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Noise intensity inside the head switching band' },
       { label: 'Displacement',param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Horizontal shift amount applied to the distorted scanlines' },
     ] },
   { name: 'tracking',    src: FX_TRACKING, group: 'analogue',
     desc: 'VHS tracking error: a horizontal band of offset/displaced video rolls vertically with soft feathered edges and noise fill, simulating dirty VCR heads or worn tape.',
     controls: [
-      { label: 'Band Width', param: 0, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Height of the tracking error band' },
-      { label: 'Noise',      param: 1, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Noise intensity within the tracking band' },
+      { label: 'Band Width', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Height of the tracking error band' },
+      { label: 'Noise',      param: 1, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'Noise intensity within the tracking band' },
       { label: 'Speed',      param: 2, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Vertical scroll speed of the tracking band' },
     ] },
   { name: 'edgeboost',   src: FX_EDGEBOOST, group: 'analogue',
     desc: 'VHS edge enhancement / sharpening halo: unsharp mask with overshoot ringing creating the characteristic bright/dark halos at high-contrast transitions.',
     controls: [
-      { label: 'Sharpness',  param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Edge enhancement gain — higher = sharper edges with stronger halos' },
+      { label: 'Sharpness',  param: 0, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'Edge enhancement gain — higher = sharper edges with stronger halos' },
       { label: 'Kernel Size',param: 1, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Blur kernel radius for the unsharp mask — larger = wider halos' },
       { label: 'Overshoot',  param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Ringing overshoot intensity — creates the bright/dark fringe at edges' },
     ] },
@@ -988,7 +1188,7 @@ export const EFFECTS = [
     desc: 'Magnetic degaussing burst: a radial RGB rainbow ripple warps outward from a point, each channel displaced at a different amplitude — simulating a degauss coil pulse.',
     controls: [
       { label: 'Wavelength', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Ripple frequency — more rings in the burst' },
-      { label: 'Amplitude',  param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Displacement intensity of the color distortion' },
+      { label: 'Amplitude',  param: 1, min: 0, max: 1, step: 0.01, default: 0.8, desc: 'Displacement intensity of the color distortion' },
       { label: 'Spread',     param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How far the ripple spreads from its origin point' },
       { label: 'Speed',      param: 3, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Animation speed of the degaussing ripple' },
     ] },
@@ -1009,7 +1209,7 @@ export const EFFECTS = [
   { name: 'static',      src: FX_STATICFX, group: 'analogue',
     desc: 'RF noise / analog TV snow: temporal white noise modulated by horizontal banding at ~15.7 kHz scanline spacing, with optional horizontal streak artifacts.',
     controls: [
-      { label: 'Snow',       param: 0, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Overall snow / noise intensity' },
+      { label: 'Snow',       param: 0, min: 0, max: 1, step: 0.01, default: 0.55, desc: 'Overall snow / noise intensity' },
       { label: 'Banding',    param: 1, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Horizontal sync banding pattern strength' },
       { label: 'Streaks',    param: 2, min: 0, max: 1, step: 0.01, default: 0.2, desc: 'Probability and intensity of horizontal noise streaks' },
       { label: 'Grain Size', param: 3, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'Noise grain size — higher = larger, blockier noise particles' },
@@ -1061,9 +1261,76 @@ export const EFFECTS = [
   { name: 'scanphase',   src: FX_SCANPHASE, group: 'analogue',
     desc: 'NTSC subcarrier phase drift: per-line hue rotation slowly desynchronizes, creating color flickering and shifting across the screen as the color subcarrier drifts.',
     controls: [
-      { label: 'Drift Amt',  param: 0, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Slow per-scanline hue drift amount' },
+      { label: 'Drift Amt',  param: 0, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Slow per-scanline hue drift amount' },
       { label: 'Flicker',    param: 1, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'High-frequency hue flickering intensity per scanline' },
       { label: 'Hue Rotate', param: 2, min: 0, max: 1, step: 0.01, default: 0.2, desc: 'Global hue rotation speed' },
+    ] },
+  { name: 'dissolve',     src: FX_DISSOLVE, group: 'bent',
+    desc: 'Image dissolution: the frame breaks apart into horizontal noise bands that scroll vertically, dissolving the picture into static with color corruption at the edges of each band.',
+    controls: [
+      { label: 'Band Width', param: 0, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'How much of the frame the dissolution band covers' },
+      { label: 'Noise Intensity', param: 1, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'How aggressive the noise replacement is inside the band' },
+      { label: 'Scroll Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Vertical scrolling speed of the dissolution band' },
+    ] },
+  { name: 'colorbars',    src: FX_COLORBARS, group: 'bent',
+    desc: 'Injected chroma carrier: wild psychedelic horizontal color bands modulated by the underlying image brightness — like feeding an audio signal into the color subcarrier pin.',
+    controls: [
+      { label: 'Band Count',  param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Number of horizontal color bands (4–40)' },
+      { label: 'Intensity',   param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How strongly the color bars overlay the source' },
+      { label: 'Color Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How fast the color bands shift through the spectrum' },
+      { label: 'Modulation',  param: 3, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Image content influence on the color band generation' },
+    ] },
+  { name: 'channelswap',  src: FX_CHANNELSWAP, group: 'bent',
+    desc: 'Horizontal-segmented RGB channel remixing: the frame is divided into strips and each strip gets a random channel swap — red becomes green, green becomes blue, etc. Creates wild color palette explosions.',
+    controls: [
+      { label: 'Strip Count', param: 0, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How many horizontal strips the frame is divided into' },
+      { label: 'Swap Intensity', param: 1, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'How strongly the channels are remixed per strip' },
+      { label: 'Swap Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How often the channel mapping changes per strip' },
+    ] },
+  { name: 'crushblow',    src: FX_CRUSHBLOW, group: 'bent',
+    desc: 'Luma crush + chroma blowout: pushes contrast to extremes (crushed blacks, blown whites) while simultaneously boosting saturation to neon levels. Classic circuit-bent enhancer behavior.',
+    controls: [
+      { label: 'Contrast Crush', param: 0, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How extreme the contrast push is — higher = more crushed/blown' },
+      { label: 'Saturation Boost', param: 1, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'How much the color saturation is pushed past normal' },
+      { label: 'Hue Push', param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Global hue shift applied during the blowout' },
+      { label: 'Knee Softness', param: 3, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'How soft the transition is at the crush edges' },
+    ] },
+  { name: 'sliceshift',   src: FX_SLICESHIFT, group: 'bent',
+    desc: 'Sliced displacement with color treatment: horizontal bands get randomly displaced sideways AND independently hue-rotated and saturated, creating densely layered color-shifted motion.',
+    controls: [
+      { label: 'Slice Count', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Number of horizontal band slices' },
+      { label: 'Displacement', param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How far bands are shifted horizontally' },
+      { label: 'Color Shift', param: 2, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'Hue and saturation manipulation per slice' },
+      { label: 'Scroll Speed', param: 3, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How fast bands scroll vertically' },
+    ] },
+  { name: 'noisewipe',    src: FX_NOISEWIPE, group: 'bent',
+    desc: 'Noise cascade wipe: a wall of structured noise rolls across the frame from top to bottom, dissolving everything behind it with colored static and channel corruption.',
+    controls: [
+      { label: 'Edge Width', param: 0, min: 0, max: 1, step: 0.01, default: 0.3, desc: 'How soft the transition edge of the wipe is' },
+      { label: 'Noise Power', param: 1, min: 0, max: 1, step: 0.01, default: 0.8, desc: 'Intensity of the noise that replaces the image' },
+      { label: 'Wipe Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'How fast the noise wall moves down the frame' },
+      { label: 'Grain Size', param: 3, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Noise grain scale — larger = blockier noise' },
+    ] },
+  { name: 'chromasmearplus', src: FX_CHROMASMEARPLUS, group: 'bent',
+    desc: 'Chroma smear with vertical displacement: color bleeds horizontally across the entire scanline while the whole row is also displaced vertically — the characteristic look of a failing TBC in an analog video chain.',
+    controls: [
+      { label: 'Smear Width', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How far color bleeds horizontally across the scanline' },
+      { label: 'Chroma Loss', param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How much chroma information is lost vs preserved' },
+      { label: 'Vert Shift', param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Per-row vertical displacement amount' },
+    ] },
+  { name: 'huespread',    src: FX_HUESPREAD, group: 'bent',
+    desc: 'Horizontal hue gradients: each scanline gets a slightly different hue rotation, doing a random walk from the top of the frame. Neighboring lines have similar but not identical hues — like the color subcarrier phase has completely desynchronized.',
+    controls: [
+      { label: 'Spread Amount', param: 0, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How far the hue random walk diverges from top to bottom' },
+      { label: 'Drift', param: 1, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Time-based hue drift on top of the random walk' },
+      { label: 'Saturation', param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Saturation multiplier applied alongside the hue spread' },
+    ] },
+  { name: 'framerip',     src: FX_FRAMERIP, group: 'bent',
+    desc: 'Frame buffer tearing: parts of the frame rip horizontally — one side shows the current frame, the other shows a displaced version, with jagged tearing boundaries that have color corruption. Multiple tears can happen simultaneously.',
+    controls: [
+      { label: 'Tear Count', param: 0, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'How many simultaneous frame tears occur' },
+      { label: 'Tear Strength', param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Width and displacement of each tear' },
+      { label: 'Tear Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How fast the tearing positions change' },
     ] },
 ];
 

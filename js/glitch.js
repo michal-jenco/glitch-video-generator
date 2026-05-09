@@ -219,7 +219,7 @@ export class ChaosEngine {
     // bursts: brief extreme override
     if (time > this.burstUntil && this.rng() < 0.003 + this.chaosRate*0.02){
       this.burstUntil = time + 0.05 + this.rng()*0.25;
-      const burstChoices = ['strobe','color','jpegblocks','datamosh','band','rgb_split','feedback','ntsc','phosphor','degauss','pincushion','static','vhold','chromadrop','headswitch'];
+      const burstChoices = ['strobe','color','jpegblocks','datamosh','band','rgb_split','feedback','ntsc','phosphor','degauss','pincushion','static','vhold','chromadrop','headswitch','dissolve','colorbars','channelswap','crushblow'];
       const availableBurst = burstChoices.filter(name => {
         const cfg = this.effectConfig.get(name);
         const g = fxMeta.get(name) || 'original';

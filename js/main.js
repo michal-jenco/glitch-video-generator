@@ -189,6 +189,7 @@ const randomizeTogglesBtn = $('randomizeToggles');
 const randomizeParamsBtn = $('randomizeParams');
 const groupOriginalCb = $('groupOriginal');
 const groupAnalogueCb = $('groupAnalogue');
+const groupBentCb = $('groupBent');
 
 function syncOutputs(){
   intensityOut.textContent = (+intensityEl.value).toFixed(2);
@@ -532,7 +533,7 @@ function applyState(state) {
   if (state.chaosRate != null) { chaosRateEl.value = state.chaosRate; chaos.setChaosRate(+state.chaosRate); }
   if (state.maxFx != null) { maxFxEl.value = state.maxFx; chaos.setMaxActive(+state.maxFx); }
   if (state.activeGroups) {
-    const allGroups = ['original', 'analogue'];
+    const allGroups = [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))];
     for (const g of allGroups){
       const active = state.activeGroups.includes(g);
       chaos.setGroupEnabled(g, active);
@@ -816,6 +817,13 @@ groupAnalogueCb.addEventListener('change', () => {
   const active = groupAnalogueCb.checked;
   chaos.setGroupEnabled('analogue', active);
   const wrapper = document.querySelector('.fxGroup[data-group="analogue"]');
+  if (wrapper) wrapper.style.display = active ? '' : 'none';
+});
+
+groupBentCb.addEventListener('change', () => {
+  const active = groupBentCb.checked;
+  chaos.setGroupEnabled('bent', active);
+  const wrapper = document.querySelector('.fxGroup[data-group="bent"]');
   if (wrapper) wrapper.style.display = active ? '' : 'none';
 });
 

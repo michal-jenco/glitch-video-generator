@@ -122,7 +122,7 @@ function expandState(c) {
     gifDuration: c.gd ?? 3,
     aspectLock: c.ar ?? 'free',
     resolutionCap: c.res ?? 'auto',
-    activeGroups: c.fg || ['original', 'analogue'],
+    activeGroups: c.fg || [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))],
     effects: FX_NAMES.map(name => ({
       name, enabled: true, amount: 1, weight: 1, params: {},
     })),
