@@ -68,9 +68,13 @@ export class Recorder {
 
   recordedContainer(){ return this.recordedFormat?.container || null; }
 
-  async start(){
+  async start(audioTrack = null){
     if (this.isRecording()) return;
     this.mode = await detectRecorderMode();
+
+    // WebCodecs path encodes video only — fall back to MediaRecorder when we
+    // need audio so the source's audio track ends up in the file.
+    if (audioTrack && this.mode === 'webcodecs') this.mode = 'webm-ffmpeg';
 
     if (this.mode === 'webcodecs'){
       this.webcodecsRec = new WebCodecsRecorder(this.canvas);
@@ -89,6 +93,7 @@ export class Recorder {
     }
 
     const stream = this.canvas.captureStream(60);
+    if (audioTrack) stream.addTrack(audioTrack);
     const fmt = pickRecorderFormat();
     if (!fmt){ alert('MediaRecorder not supported in this browser'); return; }
     this.recordedFormat = fmt;
@@ -181,7 +186,8 @@ export class Recorder {
       '-crf', '30',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
-      '-an',
+      '-c:a', 'aac',
+      '-b:a', '160k',
       outputName,
     ]);
 

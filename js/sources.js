@@ -32,13 +32,36 @@ export class VideoSource {
     this.video.muted = true;
     this.video.loop = true;
     this.video.playsInline = true;
+    this.video.preload = 'auto';
     this.url = URL.createObjectURL(file);
     this.video.src = this.url;
     this._ready = false;
-    this.video.addEventListener('canplay', () => { this._ready = true; this.video.play().catch(()=>{}); });
+    // Stay paused on load — user explicitly hits play. Seek to first frame so
+    // the canvas shows a still rather than a black frame.
+    this.video.addEventListener('loadeddata', () => {
+      this._ready = true;
+      try { this.video.currentTime = 0; } catch {}
+    });
   }
   ready(){ return this._ready && this.video.readyState >= 2; }
   frame(){ return this.video; }
+  setMuted(muted){
+    this.video.muted = !!muted;
+    if (!muted && !this.video.paused) this.video.play().catch(()=>{});
+  }
+  get muted(){ return this.video.muted; }
+  get paused(){ return this.video.paused; }
+  play(){ return this.video.play().catch(()=>{}); }
+  pause(){ this.video.pause(); }
+  // Returns an audio MediaStreamTrack if the file has an audio stream, else null.
+  audioTrack(){
+    if (typeof this.video.captureStream !== 'function') return null;
+    try {
+      const stream = this.video.captureStream();
+      const tracks = stream.getAudioTracks();
+      return tracks.length ? tracks[0] : null;
+    } catch { return null; }
+  }
   stop(){ this.video.pause(); URL.revokeObjectURL(this.url); }
 }
 

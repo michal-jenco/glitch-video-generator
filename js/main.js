@@ -152,6 +152,9 @@ const deletePresetBtn = $('deletePresetBtn');
 const sharePresetBtn = $('sharePresetBtn');
 const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
+const videoControlsRow = $('videoControlsRow');
+const videoPlayBtn = $('videoPlayBtn');
+const videoAudioBtn = $('videoAudioBtn');
 const webcamRow = $('webcamRow');
 const flipCamBtn = $('flipCamBtn');
 const mirrorBtn = $('mirrorBtn');
@@ -208,11 +211,19 @@ $('proceduralPattern').addEventListener('change', e => {
   if (source instanceof ProceduralSource) source.setPattern(e.target.value);
 });
 
+function updateVideoCtrlBtns(){
+  if (!(source instanceof VideoSource)) return;
+  videoAudioBtn.textContent = source.muted ? '🔇 audio: off' : '🔊 audio: on';
+  videoPlayBtn.textContent = source.paused ? '▶ play' : '⏸ pause';
+}
+
 $('fileInput').addEventListener('change', e => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
   if (source.stop) source.stop();
   source = file.type.startsWith('video') ? new VideoSource(file) : new ImageSource(file);
+  videoControlsRow.classList.toggle('hidden', !(source instanceof VideoSource));
+  updateVideoCtrlBtns();
 });
 
 let webcamFacing = 'user'; // 'user' = front, 'environment' = back
@@ -226,6 +237,7 @@ function updateMirrorBtn(){
 function switchSource(kind, facingMode){
   if (source.stop) source.stop();
   uploadRow.classList.toggle('hidden', kind !== 'upload');
+  videoControlsRow.classList.add('hidden');
   proceduralRow.classList.toggle('hidden', kind !== 'procedural');
   webcamRow.classList.toggle('hidden', kind !== 'webcam');
   if (kind === 'procedural'){
@@ -260,6 +272,18 @@ mirrorBtn.addEventListener('click', () => {
   updateMirrorBtn();
 });
 
+videoAudioBtn.addEventListener('click', () => {
+  if (!(source instanceof VideoSource)) return;
+  source.setMuted(!source.muted);
+  updateVideoCtrlBtns();
+});
+
+videoPlayBtn.addEventListener('click', () => {
+  if (!(source instanceof VideoSource)) return;
+  if (source.paused) source.play(); else source.pause();
+  updateVideoCtrlBtns();
+});
+
 recBtn.addEventListener('click', async () => {
   if (recorder.isRecording()){
     recBtn.disabled = true;
@@ -270,7 +294,8 @@ recBtn.addEventListener('click', async () => {
     recStatus.textContent = 'saved';
   } else {
     recBtn.disabled = true;
-    try { await recorder.start(); }
+    const audioTrack = (source instanceof VideoSource && !source.muted) ? source.audioTrack() : null;
+    try { await recorder.start(audioTrack); }
     finally { recBtn.disabled = false; }
     recBtn.classList.add('recording');
     recBtn.textContent = '■ STOP';
