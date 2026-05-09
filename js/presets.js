@@ -28,7 +28,7 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap, fitMode, tileCols, tileRows }) {
   return {
     seed,
     intensity: +intensity,
@@ -42,6 +42,9 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
     lockedPasses: chainLocked ? (lockedPasses || null) : null,
     aspectLock: aspectLock || 'free',
     resolutionCap: resolutionCap || 'auto',
+    fitMode: fitMode || 'contain',
+    tileCols: tileCols != null ? +tileCols : 4,
+    tileRows: tileRows != null ? +tileRows : 4,
     activeGroups: activeGroups || ['original', 'analogue'],
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
@@ -61,6 +64,9 @@ function compactState(state) {
   if (state.gifDuration && +state.gifDuration !== 3) out.gd = +state.gifDuration;
   if (state.aspectLock && state.aspectLock !== 'free') out.ar = state.aspectLock;
   if (state.resolutionCap && state.resolutionCap !== 'auto') out.res = state.resolutionCap;
+  if (state.fitMode && state.fitMode !== 'contain') out.fm = state.fitMode;
+  if (state.tileCols != null && +state.tileCols !== 4) out.tc = +state.tileCols;
+  if (state.tileRows != null && +state.tileRows !== 4) out.tr = +state.tileRows;
 
   // Groups: only emit if not both active (default)
   const groups = state.activeGroups || ['original', 'analogue'];
@@ -122,6 +128,9 @@ function expandState(c) {
     gifDuration: c.gd ?? 3,
     aspectLock: c.ar ?? 'free',
     resolutionCap: c.res ?? 'auto',
+    fitMode: c.fm ?? 'contain',
+    tileCols: c.tc ?? 4,
+    tileRows: c.tr ?? 4,
     activeGroups: c.fg || [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))],
     effects: FX_NAMES.map(name => ({
       name, enabled: true, amount: 1, weight: 1, params: {},
