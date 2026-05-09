@@ -82,6 +82,7 @@ void main(){
 `;
 
 // object-fit: contain — letterbox to show full source (no cropping)
+// uParam0 controls vertical alignment: 0 = center, 1 = top, -1 = bottom
 const FX_FIT_CONTAIN = HEAD + `
 uniform vec2 uSrcResolution;
 void main(){
@@ -93,12 +94,27 @@ void main(){
     float srcA = src.x / src.y;
     scale = (srcA > dstA) ? vec2(1.0, srcA / dstA) : vec2(dstA / srcA, 1.0);
   }
-  vec2 uv = vUv * scale + (1.0 - scale) * 0.5;
+  float alignY = uParam0;
+  vec2 offset = vec2((1.0 - scale.x) * 0.5, (1.0 - scale.y) * (0.5 - alignY * 0.5));
+  vec2 uv = vUv * scale + offset;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
   } else {
     outColor = texture(uTex, uv);
   }
+}
+`;
+
+// object-fit: tile — repeat source across uParam0 cols × uParam1 rows
+const FX_FIT_TILE = HEAD + `
+uniform vec2 uSrcResolution;
+void main(){
+  float cols = floor(uParam0 + 0.5);
+  float rows = floor(uParam1 + 0.5);
+  if (cols < 1.0) cols = 1.0;
+  if (rows < 1.0) rows = 1.0;
+  vec2 uv = fract(vUv * vec2(cols, rows));
+  outColor = texture(uTex, uv);
 }
 `;
 
@@ -538,7 +554,10 @@ export class Pipeline {
     this.programs.copy = program(gl, VERT, FX_COPY);
     this.programs.fitCover = program(gl, VERT, FX_FIT_COVER);
     this.programs.fitContain = program(gl, VERT, FX_FIT_CONTAIN);
+    this.programs.fitTile = program(gl, VERT, FX_FIT_TILE);
     this.srcW = 1; this.srcH = 1;
+    this._fitProg = this.programs.fitContain;
+    this._fitAlignY = 0.0;
     for (const fx of EFFECTS) {
       this.programs[fx.name] = program(gl, VERT, fx.src);
     }
@@ -596,20 +615,35 @@ export class Pipeline {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
+  setFitMode(mode, alignY, tileCols, tileRows){
+    const map = { contain: 'fitContain', cover: 'fitCover', stretch: 'copy', tile: 'fitTile' };
+    this._fitProg = this.programs[map[mode]] || this.programs.fitContain;
+    this._fitAlignY = alignY != null ? alignY : 0.0;
+    this._fitMode = mode;
+    this._tileCols = tileCols != null ? tileCols : 4;
+    this._tileRows = tileRows != null ? tileRows : 4;
+  }
+
   // passes: array of { name, params: [p0..p3], intensity }
   render({ passes, time, seed, globalIntensity }){
     const gl = this.gl;
     const W = this.canvas.width, H = this.canvas.height;
     gl.bindVertexArray(this.vao);
 
-    // pass 0: copy source -> fbA, with object-fit: contain
+    // pass 0: copy source -> fbA with selected fit mode
     let read = this.fbA, write = this.fbB;
     {
-      const prog = this.programs.fitContain;
+      const prog = this._fitProg;
+      let fitParams;
+      if (this._fitMode === 'tile') {
+        fitParams = [this._tileCols, this._tileRows, 0, 0];
+      } else {
+        fitParams = [this._fitAlignY, 0, 0, 0];
+      }
       gl.bindFramebuffer(gl.FRAMEBUFFER, read.fb);
       gl.viewport(0, 0, read.w, read.h);
       gl.useProgram(prog);
-      this._setCommon(prog, time, seed, globalIntensity, [0,0,0,0]);
+      this._setCommon(prog, time, seed, globalIntensity, fitParams);
       gl.uniform2f(gl.getUniformLocation(prog, 'uSrcResolution'), this.srcW, this.srcH);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.fbHistory.tex);

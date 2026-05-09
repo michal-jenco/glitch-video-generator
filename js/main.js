@@ -39,6 +39,9 @@ const RES_CAPS = { 'auto': null, '480p': 480, '720p': 720, '1080p': 1080 };
 
 let aspectLock = 'free';
 let resolutionCap = 'auto';
+let fitMode = 'contain';
+let tileCols = 4;
+let tileRows = 4;
 
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -101,11 +104,22 @@ function getOrientation(){
 }
 
 let _webcamReorientTimer = null;
+function updateFitMode(){
+  const alignY = fitMode === 'contain' && getOrientation() === 'portrait' ? 1.0 : 0.0;
+  const effectiveMode = (fitMode === 'contain' && aspectLock !== 'free') ? 'cover' : fitMode;
+  pipeline.setFitMode(effectiveMode, alignY, tileCols, tileRows);
+}
+
+function updateFitUI(){
+  updateFitMode();
+  tileOptionsRow.classList.toggle('hidden', fitMode !== 'tile');
+}
 function applyOrientationLayout(){
   const o = getOrientation();
   document.body.classList.toggle('portrait', o === 'portrait');
   document.body.classList.toggle('landscape', o === 'landscape');
   resize();
+  updateFitMode();
   if (typeof source !== 'undefined' && source instanceof WebcamSource){
     clearTimeout(_webcamReorientTimer);
     _webcamReorientTimer = setTimeout(() => {
@@ -136,6 +150,10 @@ const fpsEl = $('fps');
 const activeFxEl = $('activeFx');
 const aspectLockEl = $('aspectLock');
 const resolutionCapEl = $('resolutionCap');
+const fitModeEl = $('fitMode');
+const tileOptionsRow = $('tileOptions');
+const tileColsEl = $('tileCols');
+const tileRowsEl = $('tileRows');
 const recBtn = $('recBtn');
 const downloadBtn = $('downloadBtn');
 const exportMp4Btn = $('exportMp4Btn');
@@ -197,10 +215,26 @@ $('reseed').addEventListener('click', () => {
 aspectLockEl.addEventListener('change', () => {
   aspectLock = aspectLockEl.value;
   resize();
+  updateFitMode();
 });
 resolutionCapEl.addEventListener('change', () => {
   resolutionCap = resolutionCapEl.value;
   resize();
+});
+
+fitModeEl.addEventListener('change', () => {
+  fitMode = fitModeEl.value;
+  updateFitUI();
+});
+
+tileColsEl.addEventListener('change', () => {
+  tileCols = +tileColsEl.value;
+  updateFitUI();
+});
+
+tileRowsEl.addEventListener('change', () => {
+  tileRows = +tileRowsEl.value;
+  updateFitUI();
 });
 
 document.querySelectorAll('input[name="source"]').forEach(r => {
@@ -452,6 +486,9 @@ function collectState() {
     lockedPasses: chaos.lockedPasses,
     aspectLock,
     resolutionCap,
+    fitMode,
+    tileCols,
+    tileRows,
   });
 }
 
@@ -488,6 +525,19 @@ function applyState(state) {
   if (state.resolutionCap && RES_CAPS[state.resolutionCap] !== undefined) {
     resolutionCap = state.resolutionCap;
     resolutionCapEl.value = resolutionCap;
+  }
+  if (state.tileCols != null) {
+    tileCols = state.tileCols;
+    tileColsEl.value = tileCols;
+  }
+  if (state.tileRows != null) {
+    tileRows = state.tileRows;
+    tileRowsEl.value = tileRows;
+  }
+  if (state.fitMode) {
+    fitMode = state.fitMode;
+    fitModeEl.value = fitMode;
+    updateFitUI();
   }
   resize();
   if (state.chainLocked != null) {

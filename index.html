@@ -47,6 +47,14 @@
       </select>
     </div>
     <div class="row">
+      <label>fit
+        <select id="fitMode">
+          <option value="contain" selected>fit</option>
+          <option value="cover">fill</option>
+          <option value="stretch">stretch</option>
+          <option value="tile">tile</option>
+        </select>
+      </label>
       <label>aspect
         <select id="aspectLock">
           <option value="free" selected>free</option>
@@ -64,6 +72,36 @@
           <option value="480p">480p</option>
           <option value="720p">720p</option>
           <option value="1080p">1080p</option>
+        </select>
+      </label>
+    </div>
+    <div id="tileOptions" class="row hidden">
+      <label>cols
+        <select id="tileCols">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+      </label>
+      <label>rows
+        <select id="tileRows">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
         </select>
       </label>
     </div>
