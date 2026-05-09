@@ -532,16 +532,15 @@ function applyState(state) {
   if (state.intensity != null) { intensityEl.value = state.intensity; }
   if (state.chaosRate != null) { chaosRateEl.value = state.chaosRate; chaos.setChaosRate(+state.chaosRate); }
   if (state.maxFx != null) { maxFxEl.value = state.maxFx; chaos.setMaxActive(+state.maxFx); }
-  if (state.activeGroups) {
-    const allGroups = [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))];
-    for (const g of allGroups){
-      const active = state.activeGroups.includes(g);
-      chaos.setGroupEnabled(g, active);
-      const cb = document.querySelector(`input[data-group="${g}"]`);
-      if (cb) cb.checked = active;
-      const wrapper = document.querySelector(`.fxGroup[data-group="${g}"]`);
-      if (wrapper) wrapper.style.display = active ? '' : 'none';
-    }
+  const allGroups = [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))];
+  const groups = state.activeGroups || ['original'];
+  for (const g of allGroups){
+    const active = groups.includes(g);
+    chaos.setGroupEnabled(g, active);
+    const cb = document.querySelector(`input[data-group="${g}"]`);
+    if (cb) cb.checked = active;
+    const wrapper = document.querySelector(`.fxGroup[data-group="${g}"]`);
+    if (wrapper) wrapper.style.display = active ? '' : 'none';
   }
   if (state.effects) {
     for (const fx of state.effects) {
