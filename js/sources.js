@@ -51,6 +51,13 @@ export class VideoSource {
   }
   get muted(){ return this.video.muted; }
   get paused(){ return this.video.paused; }
+  get volume(){ return this.video.volume; }
+  setVolume(v){ this.video.volume = Math.max(0, Math.min(1, v)); }
+  seek(time){
+    try { this.video.currentTime = Math.max(0, Math.min(time, this.video.duration || 0)); } catch {}
+  }
+  currentTime(){ return this.video.currentTime; }
+  duration(){ return this.video.duration; }
   play(){ return this.video.play().catch(()=>{}); }
   pause(){ this.video.pause(); }
   // Returns an audio MediaStreamTrack if the file has an audio stream, else null.

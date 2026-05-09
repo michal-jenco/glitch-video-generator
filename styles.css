@@ -118,6 +118,7 @@ body.portrait #panelToggle {
   flex-wrap: wrap;
 }
 .row.hidden { display: none; }
+.hidden { display: none !important; }
 
 label {
   display: inline-flex;
@@ -270,4 +271,12 @@ button.recording {
 .fxCard .slider {
   grid-template-columns: 44px 1fr 32px;
   margin: 4px 0;
+}
+
+.videoTime {
+  font-size: 10px;
+  color: var(--accent2);
+  white-space: nowrap;
+  text-align: right;
+  min-width: 80px;
 }

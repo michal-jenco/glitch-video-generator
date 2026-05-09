@@ -172,7 +172,11 @@ const proceduralRow = $('proceduralRow');
 const uploadRow = $('uploadRow');
 const videoControlsRow = $('videoControlsRow');
 const videoPlayBtn = $('videoPlayBtn');
+const videoRewindBtn = $('videoRewindBtn');
+const videoSeekBar = $('videoSeekBar');
+const videoTime = $('videoTime');
 const videoAudioBtn = $('videoAudioBtn');
+const videoVolumeSlider = $('videoVolumeSlider');
 const webcamRow = $('webcamRow');
 const flipCamBtn = $('flipCamBtn');
 const mirrorBtn = $('mirrorBtn');
@@ -245,10 +249,17 @@ $('proceduralPattern').addEventListener('change', e => {
   if (source instanceof ProceduralSource) source.setPattern(e.target.value);
 });
 
+function formatTime(seconds){
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
 function updateVideoCtrlBtns(){
   if (!(source instanceof VideoSource)) return;
   videoAudioBtn.textContent = source.muted ? '🔇 audio: off' : '🔊 audio: on';
   videoPlayBtn.textContent = source.paused ? '▶ play' : '⏸ pause';
+  videoVolumeSlider.value = source.volume;
 }
 
 $('fileInput').addEventListener('change', e => {
@@ -315,6 +326,26 @@ videoAudioBtn.addEventListener('click', () => {
 videoPlayBtn.addEventListener('click', () => {
   if (!(source instanceof VideoSource)) return;
   if (source.paused) source.play(); else source.pause();
+  updateVideoCtrlBtns();
+});
+
+videoRewindBtn.addEventListener('click', () => {
+  if (!(source instanceof VideoSource)) return;
+  source.seek(0);
+});
+
+videoSeekBar.addEventListener('input', () => {
+  if (!(source instanceof VideoSource)) return;
+  videoSeeking = true;
+  source.seek(+videoSeekBar.value);
+});
+videoSeekBar.addEventListener('change', () => {
+  videoSeeking = false;
+});
+
+videoVolumeSlider.addEventListener('input', () => {
+  if (!(source instanceof VideoSource)) return;
+  source.setVolume(+videoVolumeSlider.value);
   updateVideoCtrlBtns();
 });
 
@@ -709,6 +740,7 @@ let fpsAcc = 0, fpsFrames = 0, fpsT = 0;
 let paused = false;
 let frozenFrame = null;
 let chainLocked = false;
+let videoSeeking = false;
 
 pauseBtn.addEventListener('click', () => {
   paused = !paused;
@@ -736,6 +768,16 @@ function frame(){
       pipeline.uploadSource(source.frame(t));
     } else if (source.frame) {
       // prime with whatever is there (procedural always ready); for not-ready video/img, skip
+    }
+
+    if (source instanceof VideoSource && source.ready() && !videoSeeking) {
+      const dur = source.duration();
+      const ct = source.currentTime();
+      if (isFinite(dur) && dur > 0 && isFinite(ct)) {
+        videoSeekBar.max = dur;
+        videoSeekBar.value = ct;
+        videoTime.textContent = formatTime(ct) + ' / ' + formatTime(dur);
+      }
     }
 
     chaos.update(t);
