@@ -1,5 +1,6 @@
 // Preset system: save/load named configs to localStorage + URL-hash sharing.
-// A preset captures all the knobs: seed, intensity, chaosRate, maxFx, per-effect config.
+// A preset captures all the knobs: seed, intensity, chaosRate, maxFx, per-effect config,
+// group state, named parameter overrides.
 
 import { EFFECTS } from './shaders.js';
 
@@ -27,7 +28,7 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap }) {
   return {
     seed,
     intensity: +intensity,
@@ -41,14 +42,15 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
     lockedPasses: chainLocked ? (lockedPasses || null) : null,
     aspectLock: aspectLock || 'free',
     resolutionCap: resolutionCap || 'auto',
+    activeGroups: activeGroups || ['original', 'analogue'],
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
 }
 
-// Compact state for URL hash. Short keys, effect-name → index, drop defaults,
-// round floats. Bumps schema to v2; v1 (verbose) still decodes for old links.
+// Compact state for URL hash. Short keys, effect-name -> index, drop defaults,
+// round floats. Schema v3 adds group state (fg) and named param overrides (fxp).
 function compactState(state) {
-  const out = { v: 2, s: state.seed };
+  const out = { v: 3, s: state.seed };
   if (state.intensity != null) out.i = r2(+state.intensity);
   if (state.chaosRate != null) out.c = r2(+state.chaosRate);
   if (state.maxFx != null) out.m = +state.maxFx;
@@ -60,8 +62,13 @@ function compactState(state) {
   if (state.aspectLock && state.aspectLock !== 'free') out.ar = state.aspectLock;
   if (state.resolutionCap && state.resolutionCap !== 'auto') out.res = state.resolutionCap;
 
+  // Groups: only emit if not both active (default)
+  const groups = state.activeGroups || ['original', 'analogue'];
+  if (groups.length < 2 || !groups.includes('original') || !groups.includes('analogue')) {
+    out.fg = groups;
+  }
+
   // Effects: emit only those differing from defaults (enabled, amt=1, wgt=1).
-  // Tuple [idx, enabled, amount, weight] with trailing defaults trimmed.
   const fx = [];
   for (const e of state.effects || []) {
     const idx = FX_INDEX.get(e.name);
@@ -76,12 +83,27 @@ function compactState(state) {
   }
   if (fx.length) out.fx = fx;
 
+  // Named param overrides: emit only non-empty param objects.
+  // fxp: array of [idx, paramIndex, value] tuples.
+  const fxp = [];
+  for (const e of state.effects || []) {
+    const idx = FX_INDEX.get(e.name);
+    if (idx == null) continue;
+    const overrides = e.params || {};
+    for (const [pi, val] of Object.entries(overrides)) {
+      fxp.push([idx, +pi, r3(+val)]);
+    }
+  }
+  if (fxp.length) out.fxp = fxp;
+
   if (state.chainLocked && state.lockedPasses?.length) {
     out.lp = state.lockedPasses.map(p => {
       const idx = FX_INDEX.get(p.name) ?? 0;
-      const [a, b, c, d] = p.params || [0, 0, 0, 0];
-      return [idx, r3(a), r3(b), r3(c), r3(d),
-              r3(p.intensity), r3(p.born), r3(p.life), r3(p.fadeIn), r3(p.fadeOut)];
+      const params = p.params || [0,0,0,0];
+      return [idx,
+        r3(params[0]||0), r3(params[1]||0), r3(params[2]||0),
+        r3(params[3]||0), r3(params[4]||0), r3(params[5]||0),
+        r3(p.intensity), r3(p.born), r3(p.life), r3(p.fadeIn), r3(p.fadeOut)];
     });
   }
   return out;
@@ -100,19 +122,26 @@ function expandState(c) {
     gifDuration: c.gd ?? 3,
     aspectLock: c.ar ?? 'free',
     resolutionCap: c.res ?? 'auto',
-    effects: FX_NAMES.map(name => ({ name, enabled: true, amount: 1, weight: 1 })),
+    activeGroups: c.fg || ['original', 'analogue'],
+    effects: FX_NAMES.map(name => ({
+      name, enabled: true, amount: 1, weight: 1, params: {},
+    })),
   };
   for (const t of c.fx || []) {
     const [idx, en = 1, a = 1, w = 1] = t;
     const e = state.effects[idx];
     if (e) { e.enabled = !!en; e.amount = a; e.weight = w; }
   }
+  for (const [idx, pi, val] of c.fxp || []) {
+    const e = state.effects[idx];
+    if (e) { e.params[pi] = val; }
+  }
   if (c.lp) {
     state.lockedPasses = c.lp.map(arr => {
-      const [idx, p0, p1, p2, p3, intensity, born, life, fadeIn, fadeOut] = arr;
+      const [idx, p0, p1, p2, p3, p4, p5, intensity, born, life, fadeIn, fadeOut] = arr;
       return {
         name: FX_NAMES[idx],
-        params: [p0, p1, p2, p3],
+        params: [p0, p1, p2, p3, p4||0, p5||0],
         intensity, born, life, fadeIn, fadeOut,
       };
     });
@@ -139,6 +168,6 @@ export function stateFromHash(hash = window.location.hash) {
     let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const obj = JSON.parse(decodeURIComponent(escape(atob(b64))));
-    return obj && obj.v === 2 ? expandState(obj) : obj;
+    return obj && obj.v >= 2 ? expandState(obj) : obj;
   } catch { return null; }
 }

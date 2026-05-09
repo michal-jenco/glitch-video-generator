@@ -2,7 +2,20 @@
 
 ## Build / Run
 - No build step. Static site: open `index.html` in browser or serve with `python3 -m http.server`.
-- **After finishing work**, always start the dev server so the user can preview: `python3 -m http.server 8088 &`
+- **After finishing work**, always start the dev server so the user can preview:
+  ```bash
+  lsof -ti:8088 | xargs kill -9 2>/dev/null; sleep 0.3; nohup python3 -m http.server 8088 > /dev/null 2>&1 &
+  ```
+- **Verify the server works** before reporting done — all JS files must serve with HTTP 200:
+  ```bash
+  for f in js/shaders.js js/glitch.js js/presets.js js/main.js; do
+    curl -s -o /dev/null -w "%{http_code} " http://localhost:8088/$f; done; echo
+  ```
+- **Validate JS integrity** — check brace balance across all JS files:
+  ```bash
+  for f in js/shaders.js js/glitch.js js/presets.js js/main.js; do
+    python3 -c "c=open('$f').read();print('$f',c.count('{')==c.count('}') and 'OK' or 'MISMATCH')"; done
+  ```
 - All JS is loaded as native ES modules via `<script type="module" src="js/main.js">`. No bundler.
 - No linter or test runner configured.
 
@@ -21,8 +34,8 @@
 | `index.html` | All UI markup (single page) |
 | `styles.css` | All styles |
 | `js/main.js` | App bootstrap, UI wiring, render loop |
-| `js/shaders.js` | WebGL2 pipeline + 26 GLSL effects |
-| `js/glitch.js` | Chaos engine (scheduling, bursts) |
+| `js/shaders.js` | WebGL2 pipeline + 44 GLSL effects (25 original + 19 analogue) |
+| `js/glitch.js` | Chaos engine (scheduling, bursts, groups, param overrides) |
 | `js/sources.js` | Source providers (webcam, video, image, procedural) |
 | `js/procedural.js` | Procedural pattern generators |
 | `js/recorder.js` | Multi-tier video recording |

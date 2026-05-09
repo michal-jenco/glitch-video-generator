@@ -42,7 +42,11 @@ export class ChaosEngine {
       enabled: true,
       weight: 1,
       amount: 1,
+      params: {},       // sparse: { paramIndex: userSetValue, ... }
     }]));
+    this.groupConfig = new Map();
+    const groups = new Set(EFFECTS.map(fx => fx.group).filter(Boolean));
+    for (const g of groups) this.groupConfig.set(g, true);
   }
 
   setSeed(seed){
@@ -68,6 +72,20 @@ export class ChaosEngine {
     }
   }
 
+  setGroupEnabled(group, enabled){
+    this.groupConfig.set(group, !!enabled);
+    const fxMeta = new Map(EFFECTS.map(f => [f.name, f.group]));
+    this.active = this.active.filter(e => {
+      const g = fxMeta.get(e.name) || 'original';
+      return this.groupConfig.get(g) !== false;
+    });
+    if (this.burstName){
+      const burstGroup = fxMeta.get(this.burstName) || 'original';
+      if (this.groupConfig.get(burstGroup) === false) this.burstName = null;
+    }
+    this._refreshLockedPassesFromConfig();
+  }
+
   // Restore a previously serialised lockedPasses snapshot directly.
   restoreLockedPasses(passes){
     this.locked = true;
@@ -75,15 +93,15 @@ export class ChaosEngine {
     this._refreshLockedPassesFromConfig();
   }
   setEffectConfig(name, cfg = {}){
-    const prev = this.effectConfig.get(name) || { enabled: true, weight: 1, amount: 1 };
+    const prev = this.effectConfig.get(name) || { enabled: true, weight: 1, amount: 1, params: {} };
     const next = {
       enabled: cfg.enabled ?? prev.enabled,
       weight: Math.max(0, cfg.weight ?? prev.weight),
       amount: Math.max(0, cfg.amount ?? prev.amount),
+      params: cfg.params ?? prev.params ?? {},
     };
     this.effectConfig.set(name, next);
     if (!next.enabled) {
-      // Drop already-running instances immediately when an effect is untoggled.
       this.active = this.active.filter(e => e.name !== name);
       if (this.burstName === name) this.burstName = null;
     }
@@ -92,10 +110,12 @@ export class ChaosEngine {
 
   _refreshLockedPassesFromConfig(){
     if (!this.locked || !this.lockedPasses) return;
+    const fxMeta = new Map(EFFECTS.map(f => [f.name, f.group]));
     this.lockedPasses = this.lockedPasses
       .filter(pass => {
         const cfg = this.effectConfig.get(pass.name);
-        return cfg && cfg.enabled;
+        const g = fxMeta.get(pass.name) || 'original';
+        return cfg && cfg.enabled && this.groupConfig.get(g) !== false;
       })
       .map(pass => {
         const cfg = this.effectConfig.get(pass.name);
@@ -113,6 +133,8 @@ export class ChaosEngine {
     for (const fx of EFFECTS){
       const cfg = this.effectConfig.get(fx.name);
       if (!cfg || !cfg.enabled || cfg.weight <= 0) continue;
+      const g = fx.group || 'original';
+      if (this.groupConfig.get(g) === false) continue;
       list.push({ fx, cfg });
     }
     return list;
@@ -137,9 +159,13 @@ export class ChaosEngine {
     const fx = choice.fx;
     const cfg = choice.cfg;
     const life = 0.8 + this.rng()*5.0;
+    const paramOverrides = cfg.params || {};
+    const params = [0,1,2,3,4,5].map(i =>
+      paramOverrides[i] != null ? paramOverrides[i] : this.rng()
+    );
     return {
       name: fx.name,
-      params: [this.rng(), this.rng(), this.rng(), this.rng()],
+      params,
       intensity: (0.4 + this.rng()*0.6) * cfg.amount,
       born: time,
       life,
@@ -151,10 +177,12 @@ export class ChaosEngine {
   update(time){
     if (this.locked) return;
 
-    // Remove effects that got disabled via UI while they were already active.
+    // Remove effects that got disabled via UI or belong to a disabled group.
+    const fxMeta = new Map(EFFECTS.map(f => [f.name, f.group]));
     this.active = this.active.filter(e => {
       const cfg = this.effectConfig.get(e.name);
-      return cfg && cfg.enabled;
+      const g = fxMeta.get(e.name) || 'original';
+      return cfg && cfg.enabled && this.groupConfig.get(g) !== false;
     });
 
     // expire
@@ -184,17 +212,18 @@ export class ChaosEngine {
       // mutate a random param of a random effect
       if (this.active.length){
         const e = this.active[Math.floor(this.rng()*this.active.length)];
-        e.params[Math.floor(this.rng()*4)] = this.rng();
+        e.params[Math.floor(this.rng()*6)] = this.rng();
       }
     }
 
     // bursts: brief extreme override
     if (time > this.burstUntil && this.rng() < 0.003 + this.chaosRate*0.02){
       this.burstUntil = time + 0.05 + this.rng()*0.25;
-      const burstChoices = ['strobe','color','jpegblocks','datamosh','band','rgb_split','feedback'];
+      const burstChoices = ['strobe','color','jpegblocks','datamosh','band','rgb_split','feedback','ntsc','phosphor','degauss','pincushion','static','vhold','chromadrop','headswitch'];
       const availableBurst = burstChoices.filter(name => {
         const cfg = this.effectConfig.get(name);
-        return cfg && cfg.enabled;
+        const g = fxMeta.get(name) || 'original';
+        return cfg && cfg.enabled && this.groupConfig.get(g) !== false;
       });
       this.burstName = availableBurst.length
         ? availableBurst[Math.floor(this.rng() * availableBurst.length)]
@@ -213,7 +242,7 @@ export class ChaosEngine {
       out.push({ name: e.name, params: e.params, intensity: e.intensity * env });
     }
     if (time < this.burstUntil && this.burstName){
-      out.push({ name: this.burstName, params: [this.rng(), this.rng(), this.rng(), this.rng()], intensity: 1.0 });
+      out.push({ name: this.burstName, params: [this.rng(), this.rng(), this.rng(), this.rng(), this.rng(), this.rng()], intensity: 1.0 });
     }
     return out;
   }

@@ -187,6 +187,8 @@ const enableAllEffectsBtn = $('enableAllEffects');
 const disableAllEffectsBtn = $('disableAllEffects');
 const randomizeTogglesBtn = $('randomizeToggles');
 const randomizeParamsBtn = $('randomizeParams');
+const groupOriginalCb = $('groupOriginal');
+const groupAnalogueCb = $('groupAnalogue');
 
 function syncOutputs(){
   intensityOut.textContent = (+intensityEl.value).toFixed(2);
@@ -509,6 +511,7 @@ function collectState() {
     chaosRate: chaosRateEl.value,
     maxFx: maxFxEl.value,
     effectConfig: chaos.effectConfig,
+    activeGroups: [...chaos.groupConfig].filter(([_,v]) => v).map(([k]) => k),
     source: currentSourceKind(),
     proceduralPattern: $('proceduralPattern').value,
     chainLocked,
@@ -528,15 +531,32 @@ function applyState(state) {
   if (state.intensity != null) { intensityEl.value = state.intensity; }
   if (state.chaosRate != null) { chaosRateEl.value = state.chaosRate; chaos.setChaosRate(+state.chaosRate); }
   if (state.maxFx != null) { maxFxEl.value = state.maxFx; chaos.setMaxActive(+state.maxFx); }
+  if (state.activeGroups) {
+    const allGroups = ['original', 'analogue'];
+    for (const g of allGroups){
+      const active = state.activeGroups.includes(g);
+      chaos.setGroupEnabled(g, active);
+      const cb = document.querySelector(`input[data-group="${g}"]`);
+      if (cb) cb.checked = active;
+      const wrapper = document.querySelector(`.fxGroup[data-group="${g}"]`);
+      if (wrapper) wrapper.style.display = active ? '' : 'none';
+    }
+  }
   if (state.effects) {
     for (const fx of state.effects) {
-      chaos.setEffectConfig(fx.name, { enabled: fx.enabled, amount: fx.amount, weight: fx.weight });
+      chaos.setEffectConfig(fx.name, { enabled: fx.enabled, amount: fx.amount, weight: fx.weight, params: fx.params || {} });
       const cb = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="enabled"]`);
       if (cb) cb.checked = fx.enabled;
       const amt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="amount"]`);
       if (amt) { amt.value = fx.amount; const o = amt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.amount).toFixed(2); }
       const wgt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="weight"]`);
       if (wgt) { wgt.value = fx.weight; const o = wgt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.weight).toFixed(2); }
+      // Restore named param sliders
+      const paramOverrides = fx.params || {};
+      for (const [pi, val] of Object.entries(paramOverrides)) {
+        const pslider = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="param"][data-param="${pi}"]`);
+        if (pslider) { pslider.value = val; const o = pslider.parentElement.querySelector('output'); if (o) o.textContent = (+val).toFixed(2); }
+      }
     }
   }
   if (state.source && state.source !== 'upload') {
@@ -640,31 +660,123 @@ if (hashState) {
   });
 }
 
+// ---------- tooltip box ----------
+const tooltipBox = document.createElement('div');
+tooltipBox.className = 'tooltip-box hidden';
+document.body.appendChild(tooltipBox);
+
+let tooltipTarget = null;
+
+function buildTooltipHTML(fxMeta){
+  let html = `<strong>${fxMeta.name}</strong><br><br>${fxMeta.desc || ''}`;
+  html += `<br><br><span class="param-name">amt</span> — overall intensity when this effect activates`;
+  html += `<br><span class="param-name">freq</span> — how often this effect is randomly selected`;
+  if (fxMeta.controls && fxMeta.controls.length){
+    html += `<br><br><strong>Parameters:</strong>`;
+    for (const ctrl of fxMeta.controls){
+      html += `<br><span class="param-name">${ctrl.label}</span> — ${ctrl.desc || ''}`;
+    }
+  } else if (fxMeta.paramDescs){
+    html += `<br><br><strong>Parameters:</strong>`;
+    for (let i = 0; i < fxMeta.paramDescs.length; i++){
+      html += `<br><span class="param-name">param ${i}</span> — ${fxMeta.paramDescs[i]}`;
+    }
+  }
+  return html;
+}
+
+function showTooltip(trigger){
+  const name = trigger.dataset.fx;
+  const fxMeta = EFFECTS.find(f => f.name === name);
+  if (!fxMeta) return;
+  tooltipBox.innerHTML = buildTooltipHTML(fxMeta);
+  tooltipBox.classList.remove('hidden');
+  tooltipTarget = trigger;
+  // Position anchored to trigger, clamping within viewport
+  const rect = trigger.getBoundingClientRect();
+  const tooltipW = 340;
+  const tooltipH = tooltipBox.offsetHeight || 200;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  if (left + tooltipW > window.innerWidth) left = window.innerWidth - tooltipW - 10;
+  if (left < 10) left = 10;
+  if (top + tooltipH > window.innerHeight) top = rect.top - tooltipH - 6;
+  if (top < 10) top = 10;
+  tooltipBox.style.left = left + 'px';
+  tooltipBox.style.top = top + 'px';
+  trigger.classList.add('active');
+}
+
+function hideTooltip(trigger){
+  tooltipBox.classList.add('hidden');
+  tooltipTarget = null;
+  if (trigger) trigger.classList.remove('active');
+}
+
+document.addEventListener('click', (e) => {
+  if (tooltipTarget && !tooltipTarget.contains(e.target) && !tooltipBox.contains(e.target)){
+    hideTooltip(tooltipTarget);
+  }
+});
+
+window.addEventListener('scroll', () => {
+  if (tooltipTarget) hideTooltip(tooltipTarget);
+}, { passive: true });
+
 function mountEffectControls(){
   effectsList.innerHTML = '';
+  const groups = {};
   for (const fx of EFFECTS){
-    const card = document.createElement('div');
-    card.className = 'fxCard';
-    card.innerHTML = `
-      <div class="fxTop">
-        <label>
-          <input type="checkbox" data-fx="${fx.name}" data-kind="enabled" checked>
-          <span class="fxName">${fx.name}</span>
-        </label>
-      </div>
-      <label class="slider">
-        <span>amt</span>
-        <input type="range" min="0" max="2" step="0.01" value="1" data-fx="${fx.name}" data-kind="amount">
-        <output>1.00</output>
-      </label>
-      <label class="slider">
-        <span>freq</span>
-        <input type="range" min="0" max="3" step="0.01" value="1" data-fx="${fx.name}" data-kind="weight">
-        <output>1.00</output>
-      </label>
-    `;
-    effectsList.appendChild(card);
+    const g = fx.group || 'original';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(fx);
   }
+
+  for (const [groupName, fxList] of Object.entries(groups)){
+    const wrapper = document.createElement('div');
+    wrapper.className = 'fxGroup';
+    wrapper.dataset.group = groupName;
+
+    for (const fx of fxList){
+      const card = document.createElement('div');
+      card.className = 'fxCard';
+      let inner = `<div class="fxTop"><label><input type="checkbox" data-fx="${fx.name}" data-kind="enabled" checked><span class="fxName">${fx.name}</span></label><span class="tooltip-trigger" data-fx="${fx.name}" title="Show details">\u24D8</span></div>`;
+      inner += `<label class="slider"><span>amt</span><input type="range" min="0" max="2" step="0.01" value="1" data-fx="${fx.name}" data-kind="amount"><output>1.00</output></label>`;
+      inner += `<label class="slider"><span>freq</span><input type="range" min="0" max="3" step="0.01" value="1" data-fx="${fx.name}" data-kind="weight"><output>1.00</output></label>`;
+      if (fx.controls){
+        for (const ctrl of fx.controls){
+          inner += `<label class="slider paramSlider"><span>${ctrl.label}</span><input type="range" min="${ctrl.min}" max="${ctrl.max}" step="${ctrl.step}" value="${ctrl.default}" data-fx="${fx.name}" data-kind="param" data-param="${ctrl.param}"><output>${ctrl.default.toFixed(2)}</output></label>`;
+        }
+      }
+      card.innerHTML = inner;
+      wrapper.appendChild(card);
+    }
+
+    effectsList.appendChild(wrapper);
+  }
+
+  // Tooltip: hover on ⓘ icons
+  effectsList.addEventListener('mouseover', (e) => {
+    const trigger = e.target.closest('.tooltip-trigger');
+    if (trigger) showTooltip(trigger);
+  });
+  effectsList.addEventListener('mouseout', (e) => {
+    const trigger = e.target.closest('.tooltip-trigger');
+    if (trigger) hideTooltip(trigger);
+  });
+  // Touch: tap to toggle
+  effectsList.addEventListener('click', (e) => {
+    const trigger = e.target.closest('.tooltip-trigger');
+    if (!trigger) return;
+    if (tooltipTarget === trigger) {
+      hideTooltip(trigger);
+    } else {
+      if (tooltipTarget) hideTooltip(tooltipTarget);
+      showTooltip(trigger);
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  });
 
   effectsList.addEventListener('input', (e) => {
     const t = e.target;
@@ -678,11 +790,34 @@ function mountEffectControls(){
     const value = +t.value;
     const out = t.parentElement.querySelector('output');
     if (out) out.textContent = value.toFixed(2);
-    if (kind === 'amount') chaos.setEffectConfig(name, { amount: value });
-    if (kind === 'weight') chaos.setEffectConfig(name, { weight: value });
+    if (kind === 'amount'){ chaos.setEffectConfig(name, { amount: value }); return; }
+    if (kind === 'weight'){ chaos.setEffectConfig(name, { weight: value }); return; }
+    if (kind === 'param'){
+      const paramIdx = +t.dataset.param;
+      const current = chaos.effectConfig.get(name);
+      const params = { ...(current?.params || {}) };
+      params[paramIdx] = value;
+      chaos.setEffectConfig(name, { params });
+      return;
+    }
   });
 }
 mountEffectControls();
+
+// ---------- group toggles ----------
+groupOriginalCb.addEventListener('change', () => {
+  const active = groupOriginalCb.checked;
+  chaos.setGroupEnabled('original', active);
+  const wrapper = document.querySelector('.fxGroup[data-group="original"]');
+  if (wrapper) wrapper.style.display = active ? '' : 'none';
+});
+
+groupAnalogueCb.addEventListener('change', () => {
+  const active = groupAnalogueCb.checked;
+  chaos.setGroupEnabled('analogue', active);
+  const wrapper = document.querySelector('.fxGroup[data-group="analogue"]');
+  if (wrapper) wrapper.style.display = active ? '' : 'none';
+});
 
 randomizeTogglesBtn.addEventListener('click', () => {
   const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
@@ -720,17 +855,25 @@ disableAllEffectsBtn.addEventListener('click', () => {
 });
 
 randomizeParamsBtn.addEventListener('click', () => {
-  const sliders = effectsList.querySelectorAll('input[data-kind="amount"], input[data-kind="weight"]');
+  const sliders = effectsList.querySelectorAll('input[data-kind="amount"], input[data-kind="weight"], input[data-kind="param"]');
   sliders.forEach((el) => {
     const kind = el.dataset.kind;
-    const value = kind === 'amount'
-      ? 0.1 + Math.random() * 1.9
-      : Math.random() * 3.0;
+    let value;
+    if (kind === 'amount') value = 0.1 + Math.random() * 1.9;
+    else if (kind === 'weight') value = Math.random() * 3.0;
+    else value = Math.random() * +el.max;
     el.value = value.toFixed(2);
     const out = el.parentElement.querySelector('output');
     if (out) out.textContent = (+el.value).toFixed(2);
     if (kind === 'amount') chaos.setEffectConfig(el.dataset.fx, { amount: +el.value });
-    if (kind === 'weight') chaos.setEffectConfig(el.dataset.fx, { weight: +el.value });
+    else if (kind === 'weight') chaos.setEffectConfig(el.dataset.fx, { weight: +el.value });
+    else if (kind === 'param'){
+      const paramIdx = +el.dataset.param;
+      const current = chaos.effectConfig.get(el.dataset.fx);
+      const params = { ...(current?.params || {}) };
+      params[paramIdx] = value;
+      chaos.setEffectConfig(el.dataset.fx, { params });
+    }
   });
 });
 
