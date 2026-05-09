@@ -142,3 +142,10 @@ Added `dissolve`, `colorbars`, `channelswap`, `crushblow` to burst candidates.
 - **9 existing analogue defaults amplified**
 - **5 burst candidates added**
 - **Zero backwards compatibility breaks** — v3 encoding unchanged
+
+### Fixed: fit mode missing from share links
+
+`captureState` was receiving `fitMode`/`tileCols`/`tileRows` from `collectState`
+but silently dropping them from the returned object. Added to state object, compact
+encoding (`fm`/`tc`/`tr` keys) and expandState decoding. The `applyState` side
+was already wired — the data just never reached it.
