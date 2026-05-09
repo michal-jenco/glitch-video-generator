@@ -81,6 +81,27 @@ void main(){
 }
 `;
 
+// object-fit: contain — letterbox to show full source (no cropping)
+const FX_FIT_CONTAIN = HEAD + `
+uniform vec2 uSrcResolution;
+void main(){
+  vec2 dst = uResolution;
+  vec2 src = uSrcResolution;
+  vec2 scale = vec2(1.0);
+  if (src.x > 0.0 && src.y > 0.0 && dst.x > 0.0 && dst.y > 0.0) {
+    float dstA = dst.x / dst.y;
+    float srcA = src.x / src.y;
+    scale = (srcA > dstA) ? vec2(1.0, srcA / dstA) : vec2(dstA / srcA, 1.0);
+  }
+  vec2 uv = vUv * scale + (1.0 - scale) * 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+  } else {
+    outColor = texture(uTex, uv);
+  }
+}
+`;
+
 // 1. RGB chromatic aberration / channel split
 const FX_RGB = HEAD + `
 void main(){
@@ -516,6 +537,7 @@ export class Pipeline {
     this.programs = {};
     this.programs.copy = program(gl, VERT, FX_COPY);
     this.programs.fitCover = program(gl, VERT, FX_FIT_COVER);
+    this.programs.fitContain = program(gl, VERT, FX_FIT_CONTAIN);
     this.srcW = 1; this.srcH = 1;
     for (const fx of EFFECTS) {
       this.programs[fx.name] = program(gl, VERT, fx.src);
@@ -580,10 +602,10 @@ export class Pipeline {
     const W = this.canvas.width, H = this.canvas.height;
     gl.bindVertexArray(this.vao);
 
-    // pass 0: copy source -> fbA, with object-fit: cover
+    // pass 0: copy source -> fbA, with object-fit: contain
     let read = this.fbA, write = this.fbB;
     {
-      const prog = this.programs.fitCover;
+      const prog = this.programs.fitContain;
       gl.bindFramebuffer(gl.FRAMEBUFFER, read.fb);
       gl.viewport(0, 0, read.w, read.h);
       gl.useProgram(prog);

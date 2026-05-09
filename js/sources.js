@@ -82,10 +82,7 @@ export class WebcamSource {
   }
 
   static _constraintsFor(facingMode, orientation){
-    const long = 1280, short = 720;
-    const w = orientation === 'portrait' ? short : long;
-    const h = orientation === 'portrait' ? long : short;
-    return { video: { width: { ideal: w }, height: { ideal: h }, facingMode }, audio: false };
+    return { video: { facingMode }, audio: false };
   }
 
   _acquire(orientation){
