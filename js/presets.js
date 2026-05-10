@@ -30,7 +30,8 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap, fitMode, tileCols, tileRows }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap, fitMode, tileCols, tileRows, postAdjustments }) {
+  const post = postAdjustments || {};
   return {
     seed,
     intensity: +intensity,
@@ -47,6 +48,12 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
     fitMode: fitMode || 'contain',
     tileCols: tileCols != null ? +tileCols : 4,
     tileRows: tileRows != null ? +tileRows : 4,
+    postAdjustments: {
+      exposure: post.exposure != null ? +post.exposure : 0,
+      contrast: post.contrast != null ? +post.contrast : 1,
+      saturation: post.saturation != null ? +post.saturation : 1,
+      vibrance: post.vibrance != null ? +post.vibrance : 1,
+    },
     activeGroups: activeGroups || ['original', 'analogue'],
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
@@ -69,6 +76,11 @@ function compactState(state) {
   if (state.fitMode && state.fitMode !== 'contain') out.fm = state.fitMode;
   if (state.tileCols != null && +state.tileCols !== 4) out.tc = +state.tileCols;
   if (state.tileRows != null && +state.tileRows !== 4) out.tr = +state.tileRows;
+  const pa = state.postAdjustments;
+  if (pa) {
+    const adj = [r2(pa.exposure ?? 0), r2(pa.contrast ?? 1), r2(pa.saturation ?? 1), r2(pa.vibrance ?? 1)];
+    if (adj[0] !== 0 || adj[1] !== 1 || adj[2] !== 1 || adj[3] !== 1) out.adj = adj;
+  }
 
   // Always encode fg so expandState never guesses (legacy links without fg still migrate below).
   const groups = state.activeGroups || ['original', 'analogue'];
@@ -131,6 +143,12 @@ function expandState(c) {
     fitMode: c.fm ?? 'contain',
     tileCols: c.tc ?? 4,
     tileRows: c.tr ?? 4,
+    postAdjustments: {
+      exposure: c.adj?.[0] ?? 0,
+      contrast: c.adj?.[1] ?? 1,
+      saturation: c.adj?.[2] ?? 1,
+      vibrance: c.adj?.[3] ?? 1,
+    },
     // Missing fg: old compact shares omitted it when original+analogue were both on — never included bent.
     activeGroups: c.fg ?? LEGACY_DEFAULT_GROUPS,
     effects: FX_NAMES.map(name => ({

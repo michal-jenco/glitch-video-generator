@@ -66,6 +66,26 @@ const FX_COPY = HEAD + `
 void main(){ outColor = texture(uTex, vUv); }
 `;
 
+// Final image grade: applied after all effect passes.
+const FX_POST_GRADE = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  c *= exp2(uParam0);
+  c = (c - 0.5) * uParam1 + 0.5;
+  float lum = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(lum), c, uParam2);
+  vec3 hsv = rgb2hsv(max(c, vec3(0.0)));
+  float vib = uParam3 - 1.0;
+  if (vib >= 0.0) {
+    hsv.y = clamp(hsv.y * (1.0 + vib * (1.0 - hsv.y) * 1.6), 0.0, 1.0);
+  } else {
+    hsv.y = clamp(hsv.y * (1.0 + vib), 0.0, 1.0);
+  }
+  c = hsv2rgb(hsv);
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
 // object-fit: cover — crop the source to match dst aspect (no squish)
 const FX_FIT_COVER = HEAD + `
 uniform vec2 uSrcResolution;
@@ -1049,6 +1069,263 @@ void main(){
 }
 `;
 
+// Studio — CRT portrait / scan-line art stack (complements Analogue passes)
+const FX_STUDIO_CARRIER = HEAD + `
+void main(){
+  vec3 src = texture(uTex, vUv).rgb;
+  float lum = dot(src, vec3(0.299, 0.587, 0.114));
+  vec3 hsv = rgb2hsv(src);
+  hsv.y = clamp(hsv.y * mix(1.0, 2.7, uParam1 * uIntensity), 0.0, 1.0);
+  hsv.z = smoothstep(mix(0.0, 0.18, uParam0), 1.0, hsv.z);
+  vec3 boosted = hsv2rgb(hsv);
+  vec3 teal = vec3(0.05, 0.82, 1.0);
+  vec3 mag = vec3(1.0, 0.12, 0.85);
+  vec3 palette = mix(teal, mag, smoothstep(0.35, 0.95, src.r + src.b * 0.45));
+  float scan = 0.72 + 0.28 * sin(vUv.y * uResolution.y * mix(0.65, 2.4, uParam2));
+  float floorGlow = mix(0.08, 0.32, uParam3) * (0.35 + lum);
+  vec3 carrier = boosted * mix(0.28, 0.8, uParam4) + palette * floorGlow;
+  outColor = vec4(clamp(carrier * scan, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_TOPO_SCAN = HEAD + `
+float studioLum(vec2 uv){
+  return dot(texture(uTex, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.299, 0.587, 0.114));
+}
+void main(){
+  vec2 px = 1.0 / uResolution;
+  vec3 src = texture(uTex, vUv).rgb;
+  float lum = studioLum(vUv);
+  float gx = studioLum(vUv + vec2(px.x * 2.0, 0.0)) - studioLum(vUv - vec2(px.x * 2.0, 0.0));
+  float gy = studioLum(vUv + vec2(0.0, px.y * 2.0)) - studioLum(vUv - vec2(0.0, px.y * 2.0));
+  float edge = clamp(abs(gx) + abs(gy), 0.0, 1.0);
+  float density = mix(42.0, 210.0, uParam0);
+  float contourDepth = lum * mix(0.1, 0.64, uParam1) + edge * 0.08;
+  float wave = sin(vUv.x * mix(8.0, 42.0, uParam1) + uTime * 0.35 + uSeed) * 0.006;
+  float phase = (vUv.y + contourDepth + wave) * density;
+  float row = floor(phase);
+  float d = abs(fract(phase) - 0.5);
+  float width = mix(0.018, 0.12, smoothstep(0.02, 0.7, lum + edge * 1.5));
+  float lineMask = smoothstep(width, 0.0, d);
+  float shape = max(smoothstep(0.08, 0.5, lum), smoothstep(0.015, 0.18, edge));
+  float breakNoise = noise(vec2(vUv.x * mix(30.0, 130.0, uParam3), row * 0.31 + uSeed));
+  float brk = mix(1.0, smoothstep(0.18, 0.82, breakNoise + lum * 0.7), uParam3);
+  lineMask *= shape * brk;
+  vec3 tint = mix(vec3(0.15, 0.92, 1.0), vec3(1.0, 0.2, 0.88), uParam2);
+  float blackout = mix(0.55, 0.98, uParam4);
+  vec3 base = src * (1.0 - blackout * uIntensity) * 0.35;
+  vec3 floorSignal = src * mix(0.055, 0.14, lum) + vec3(lum) * 0.018;
+  vec3 neon = tint * lineMask * uIntensity * (0.7 + lum * 1.4 + edge * 1.8);
+  outColor = vec4(clamp(max(base, floorSignal * uIntensity) + neon, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_RASTER_RIBS = HEAD + `
+float ribLum(vec2 uv){
+  return dot(texture(uTex, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.299, 0.587, 0.114));
+}
+void main(){
+  vec2 px = 1.0 / uResolution;
+  vec3 src = texture(uTex, vUv).rgb;
+  float lum = ribLum(vUv);
+  float gx = ribLum(vUv + vec2(px.x * 2.0, 0.0)) - ribLum(vUv - vec2(px.x * 2.0, 0.0));
+  float gy = ribLum(vUv + vec2(0.0, px.y * 2.0)) - ribLum(vUv - vec2(0.0, px.y * 2.0));
+  float edge = clamp(abs(gx) + abs(gy), 0.0, 1.0);
+  float cols = mix(22.0, 120.0, uParam0);
+  float rows = mix(36.0, 170.0, uParam1);
+  float ribBend = (lum - 0.5) * mix(0.03, 0.18, uParam2);
+  ribBend += sin(vUv.y * 22.0 + uTime * 0.6 + uSeed) * 0.006;
+  float ribPhase = (vUv.x + ribBend + edge * 0.03) * cols;
+  float scanPhase = (vUv.y + lum * 0.18) * rows;
+  float rib = smoothstep(0.065, 0.0, abs(fract(ribPhase) - 0.5));
+  float scan = smoothstep(0.12, 0.0, abs(fract(scanPhase) - 0.5));
+  float mask = max(rib * smoothstep(0.04, 0.5, lum), scan * smoothstep(0.02, 0.22, edge));
+  float grain = smoothstep(0.2, 0.85, noise(vec2(floor(ribPhase), floor(scanPhase)) + uSeed));
+  mask *= mix(1.0, grain, uParam3);
+  vec3 cyan = vec3(0.1, 0.95, 1.0);
+  vec3 mag = vec3(1.0, 0.2, 0.95);
+  vec3 tint = mix(cyan, mag, smoothstep(0.45, 0.9, src.r + src.b * 0.5));
+  vec3 floorSignal = src * (0.06 + lum * 0.08) + vec3(lum) * 0.014;
+  vec3 ribs = tint * mask * uIntensity * (1.15 + edge * 2.0);
+  outColor = vec4(clamp(floorSignal + ribs, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_BEAM_STREAK = HEAD + `
+void main(){
+  vec2 px = 1.0 / uResolution;
+  vec3 c = texture(uTex, vUv).rgb;
+  float thresh = mix(0.22, 0.88, uParam0);
+  float vmix = uParam1;
+  float span = floor(mix(4.0, 18.0, uParam2));
+  vec3 streakH = vec3(0.0);
+  vec3 streakV = vec3(0.0);
+  float wh = 0.0;
+  float wv = 0.0;
+  for (float x = -18.0; x <= 18.0; x += 1.0){
+    float wx = step(abs(x), span + 0.5);
+    float w = exp(-x * x / (span * span * 0.16 + 0.02)) * wx;
+    vec3 s = texture(uTex, clamp(vUv + vec2(x * px.x * 2.8, 0.0), 0.0, 1.0)).rgb;
+    float sl = dot(s, vec3(0.299, 0.587, 0.114));
+    float m = smoothstep(thresh - 0.11, thresh + 0.11, sl);
+    streakH += s * w * m;
+    wh += w * m;
+  }
+  for (float y = -14.0; y <= 14.0; y += 1.0){
+    float wy = step(abs(y), span * 0.75 + 0.5);
+    float w = exp(-y * y / (span * span * 0.2 + 0.02)) * wy;
+    vec3 s = texture(uTex, clamp(vUv + vec2(0.0, y * px.y * 2.2), 0.0, 1.0)).rgb;
+    float sl = dot(s, vec3(0.299, 0.587, 0.114));
+    float m = smoothstep(thresh - 0.11, thresh + 0.11, sl);
+    streakV += s * w * m;
+    wv += w * m;
+  }
+  streakH = wh > 1e-5 ? streakH / wh : vec3(0.0);
+  streakV = wv > 1e-5 ? streakV / wv : vec3(0.0);
+  vec3 glow = mix(streakH, streakV, vmix);
+  float glowStr = mix(0.2, 1.35, uParam3) * uIntensity;
+  vec3 chill = vec3(0.12, 0.75, 1.0);
+  c = c + glow * glowStr * 0.55 + glow * chill * glowStr * 0.4;
+  outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_GRILLE_ABERRATE = HEAD + `
+void main(){
+  vec2 cuv = vUv - 0.5;
+  float r2 = dot(cuv, cuv);
+  float sep = mix(0.0, 0.038, uParam1 * uIntensity) * (1.0 + r2 * mix(0.0, 4.5, uParam2));
+  float r = texture(uTex, clamp(vUv + vec2(sep, 0.0), 0.0, 1.0)).r;
+  float g = texture(uTex, vUv).g;
+  float b = texture(uTex, clamp(vUv - vec2(sep * 0.92, 0.0), 0.0, 1.0)).b;
+  vec3 col = vec3(r, g, b);
+  float pitch = mix(1.4, 7.0, uParam0);
+  float stripe = fract((vUv.x * uResolution.x) / pitch);
+  float maskStr = mix(0.1, 0.58, uIntensity);
+  float mr = stripe < 0.333 ? 1.0 : (1.0 - maskStr);
+  float mg = (stripe >= 0.333 && stripe < 0.666) ? 1.0 : (1.0 - maskStr);
+  float mb = stripe >= 0.666 ? 1.0 : (1.0 - maskStr);
+  col *= vec3(mr, mg, mb);
+  vec3 orig = texture(uTex, vUv).rgb;
+  outColor = vec4(mix(orig, col, uIntensity), 1.0);
+}
+`;
+
+const FX_PHOSPHOR_DOTFIELD = HEAD + `
+void main(){
+  vec2 pitch = vec2(mix(3.0, 12.0, uParam0));
+  vec2 grid = vUv * uResolution / pitch;
+  vec2 cell = floor(grid);
+  vec2 local = fract(grid) - 0.5;
+  vec2 sampleUv = (cell + 0.5) * pitch / uResolution;
+  vec3 s = texture(uTex, clamp(sampleUv, vec2(0.0), vec2(1.0))).rgb;
+  float lum = dot(s, vec3(0.299, 0.587, 0.114));
+  float threshold = mix(0.03, 0.62, uParam1);
+  float emit = smoothstep(threshold, threshold + 0.28, lum);
+  float dotShape = exp(-dot(local, local) * mix(10.0, 34.0, uParam2));
+  float triad = fract(cell.x / 3.0);
+  vec3 phosphor = vec3(triad < 0.333 ? 1.0 : 0.25, (triad >= 0.333 && triad < 0.666) ? 1.0 : 0.25, triad >= 0.666 ? 1.0 : 0.25);
+  vec3 palette = mix(vec3(0.05, 0.9, 1.0), vec3(1.0, 0.15, 0.9), uParam3);
+  vec3 preserved = mix(palette, max(s, palette * lum), 0.25);
+  float flicker = 0.85 + 0.15 * hash21(cell + floor(uTime * 30.0) + uSeed);
+  vec3 outc = preserved * phosphor * emit * dotShape * flicker * uIntensity * 2.2;
+  vec3 floorSignal = s * (0.05 + lum * 0.08) + palette * lum * 0.025;
+  outColor = vec4(clamp(floorSignal + outc, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_EDGE_SYNC = HEAD + `
+float lumAt(vec2 uv){
+  return dot(texture(uTex, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.299, 0.587, 0.114));
+}
+void main(){
+  vec2 px = 1.0 / uResolution;
+  float lx = lumAt(vUv + vec2(px.x, 0.0)) - lumAt(vUv - vec2(px.x, 0.0));
+  float ly = lumAt(vUv + vec2(0.0, px.y)) - lumAt(vUv - vec2(0.0, px.y));
+  float edge = clamp(abs(lx) + abs(ly), 0.0, 1.0);
+  float sens = mix(3.0, 48.0, uParam0);
+  edge = smoothstep(0.0, 0.35, edge * sens * 0.08);
+  float row = floor(vUv.y * uResolution.y);
+  float jitter = (hash11(row * 2.3 + uSeed * 0.07) - 0.5);
+  float disp = edge * mix(0.0, 0.045, uParam1 * uIntensity);
+  vec2 uv = vUv + vec2(jitter * disp * 70.0 * px.x, 0.0);
+  vec3 col = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
+  vec2 q = floor(vUv * uResolution);
+  float bayer = fract(sin(dot(q + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+  float dit = (step(0.5, bayer) - 0.5) * uParam2 * edge * uIntensity * 0.18;
+  col += dit;
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_SIGNAL_ECHO = HEAD + `
+float echoLum(vec2 uv){
+  return dot(texture(uTex, clamp(uv, vec2(0.0), vec2(1.0))).rgb, vec3(0.299, 0.587, 0.114));
+}
+float echoEdge(vec2 uv){
+  vec2 px = 1.0 / uResolution;
+  float gx = echoLum(uv + vec2(px.x * 2.0, 0.0)) - echoLum(uv - vec2(px.x * 2.0, 0.0));
+  float gy = echoLum(uv + vec2(0.0, px.y * 2.0)) - echoLum(uv - vec2(0.0, px.y * 2.0));
+  return clamp(abs(gx) + abs(gy), 0.0, 1.0);
+}
+void main(){
+  vec3 base = texture(uTex, vUv).rgb * mix(0.18, 0.55, 1.0 - uParam3);
+  vec3 acc = vec3(0.0);
+  float total = 0.0;
+  float spacing = mix(0.006, 0.04, uParam0);
+  float drift = mix(-1.0, 1.0, uParam1);
+  for (float i = 1.0; i <= 14.0; i += 1.0){
+    float decay = exp(-i * mix(0.14, 0.38, uParam2));
+    vec2 off = vec2(i * spacing, sin(vUv.y * 38.0 + i * 0.7 + uTime + uSeed) * 0.012 * drift);
+    float e = smoothstep(0.025, 0.2, echoEdge(vUv - off));
+    float n = smoothstep(0.2, 0.82, noise((vUv - off) * uResolution * vec2(0.09, 0.02) + i + uSeed));
+    acc += vec3(0.05, 0.9, 1.0) * e * n * decay;
+    total += decay;
+  }
+  acc = total > 0.0 ? acc / total : vec3(0.0);
+  outColor = vec4(clamp(base + acc * uIntensity * 2.8, 0.0, 1.0), 1.0);
+}
+`;
+
+const FX_MOIRE_ZAG = HEAD + `
+void main(){
+  vec2 px = 1.0 / uResolution;
+  float freq = mix(0.35, 3.2, uParam0);
+  float amp = mix(0.0, 3.5, uParam1 * uIntensity);
+  float spd = mix(0.25, 4.5, uParam2);
+  float yp = vUv.y * uResolution.y;
+  float zig = sin(yp * 0.045 * freq + uTime * spd + vUv.x * uResolution.x * 0.02);
+  zig += sin(yp * 0.072 * freq - uTime * spd * 0.65 + uSeed) * 0.48;
+  vec2 uv = vUv + vec2(zig * amp * px.x, 0.0);
+  outColor = texture(uTex, clamp(uv, 0.0, 1.0));
+}
+`;
+
+const FX_PRISM_BLOOM = HEAD + `
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float threshold = mix(0.18, 0.78, uParam0);
+  vec2 dir = normalize(vec2(mix(-0.9, 0.9, uParam1), mix(0.18, 0.75, uParam2)));
+  float span = mix(8.0, 64.0, uParam3);
+  vec3 glow = vec3(0.0);
+  float total = 0.0;
+  for (float i = -18.0; i <= 18.0; i += 1.0){
+    float t = i / 18.0;
+    vec2 uv = vUv + dir * t * span / uResolution;
+    vec3 s = texture(uTex, clamp(uv, vec2(0.0), vec2(1.0))).rgb;
+    float lum = dot(s, vec3(0.299, 0.587, 0.114));
+    float gate = smoothstep(threshold, threshold + 0.25, lum);
+    float w = exp(-t * t * 3.0) * gate;
+    vec3 prism = mix(vec3(0.0, 0.8, 1.0), vec3(1.0, 0.2, 0.85), smoothstep(-0.4, 0.7, t));
+    prism = mix(prism, vec3(1.0, 0.85, 0.15), smoothstep(0.35, 1.0, t) * 0.55);
+    glow += s * prism * w;
+    total += w;
+  }
+  glow = total > 0.0 ? glow / total : vec3(0.0);
+  outColor = vec4(clamp(c + glow * uIntensity * mix(0.7, 2.4, uParam4), 0.0, 1.0), 1.0);
+}
+`;
+
 export const EFFECTS = [
   { name: 'rgb_split',   src: FX_RGB, group: 'original',
     desc: 'Chromatic aberration: red and blue channels are pulled apart with a time-varying wobble, creating color-fringed edges.',
@@ -1332,6 +1609,87 @@ export const EFFECTS = [
       { label: 'Tear Strength', param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Width and displacement of each tear' },
       { label: 'Tear Speed', param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How fast the tearing positions change' },
     ] },
+
+  { name: 'studio_carrier', src: FX_STUDIO_CARRIER, group: 'studio', studioRole: 'carrier', defaultWeight: 2.4,
+    desc: 'Dim CRT underpaint / signal carrier: keeps a visible cyan-magenta base, boosts contrast/saturation, and adds light scan structure so Studio-only chains have signal to carve instead of collapsing to black.',
+    controls: [
+      { label: 'Crush Floor', param: 0, min: 0, max: 1, step: 0.01, default: 0.25, desc: 'Black point lift before contrast shaping — higher keeps more shadow signal' },
+      { label: 'Saturation',  param: 1, min: 0, max: 1, step: 0.01, default: 0.55, desc: 'Color push into a richer CRT palette' },
+      { label: 'Scan Pitch',  param: 2, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'Fine scan modulation density' },
+      { label: 'Glow Floor',  param: 3, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'Minimum cyan/magenta light added from luma' },
+      { label: 'Source Mix',  param: 4, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'How much processed source remains under Studio line renderers' },
+    ] },
+  { name: 'topo_scan',   src: FX_TOPO_SCAN, group: 'studio', studioRole: 'reconstruct', defaultWeight: 0.85,
+    desc: 'Reconstructive horizontal contour scan: luma and edges bend the row phase so the image is rebuilt as neon topo lines on a mostly black CRT field. This is closer to line-emission portraiture than a scanline overlay.',
+    controls: [
+      { label: 'Band Density', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How many horizontal bands (higher = denser lines)' },
+      { label: 'Depth Bend', param: 1, min: 0, max: 1, step: 0.01, default: 0.65, desc: 'How strongly brightness bends the line field into contour-like bands' },
+      { label: 'Tint Bias',    param: 2, min: 0, max: 1, step: 0.01, default: 0.12, desc: 'Color bias — low cyan/teal, high magenta' },
+      { label: 'Shadow Break', param: 3, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'Random line breaks in darker bands' },
+      { label: 'Blackout',     param: 4, min: 0, max: 1, step: 0.01, default: 0.85, desc: 'How much original video is suppressed behind the emitted lines' },
+    ] },
+  { name: 'raster_ribs', src: FX_RASTER_RIBS, group: 'studio', studioRole: 'reconstruct', defaultWeight: 0.8,
+    desc: 'Curved vertical rib raster: brightness and edge structure bend a column grid into wire-like portrait ribs, then gate it with horizontal scan slices. Useful for the sculptural cyan face/torso lines in the references.',
+    controls: [
+      { label: 'Column Count', param: 0, min: 0, max: 1, step: 0.01, default: 0.42, desc: 'Density of vertical rib lines' },
+      { label: 'Scan Count',   param: 1, min: 0, max: 1, step: 0.01, default: 0.48, desc: 'Density of horizontal slice gates' },
+      { label: 'Bend Amount',  param: 2, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'How much luma bends the ribs around forms' },
+      { label: 'Dropout',      param: 3, min: 0, max: 1, step: 0.01, default: 0.28, desc: 'Cell-level breakup/noise in the wire field' },
+    ] },
+  { name: 'beam_streak', src: FX_BEAM_STREAK, group: 'studio', studioRole: 'glow', defaultWeight: 1.25,
+    desc: 'Directional cathode streak bloom: thresholded highlights blur mainly horizontally (mix toward vertical) for long phosphor trails—stronger than isotropic bloom. Complements Analogue bloom/halation without replacing them.',
+    controls: [
+      { label: 'Threshold', param: 0, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'Brightness gate for streak contribution' },
+      { label: 'Vert Mix',  param: 1, min: 0, max: 1, step: 0.01, default: 0.18, desc: 'Blend toward vertical streak vs horizontal' },
+      { label: 'Length',    param: 2, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'How far the streak kernel reaches' },
+      { label: 'Glow Boost', param: 3, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'Additive streak strength' },
+    ] },
+  { name: 'grille_aberrate', src: FX_GRILLE_ABERRATE, group: 'studio', studioRole: 'enhance',
+    desc: 'Visible RGB aperture stripes plus convergence-style separation: wide phosphor grille modulation with luminance- and corner-weighted R/B pulls—built for “RGB dots” portraits alongside Analogue shadowmask/beamconv.',
+    controls: [
+      { label: 'Stripe Pitch', param: 0, min: 0, max: 1, step: 0.01, default: 0.42, desc: 'Phosphor stripe width (screen-space)' },
+      { label: 'Chroma Sep',   param: 1, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Per-channel horizontal split strength' },
+      { label: 'Corner Pull',  param: 2, min: 0, max: 1, step: 0.01, default: 0.55, desc: 'Extra separation toward frame corners' },
+    ] },
+  { name: 'phosphor_dotfield', src: FX_PHOSPHOR_DOTFIELD, group: 'studio', studioRole: 'reconstruct', defaultWeight: 0.8,
+    desc: 'Emission dotfield renderer: the image is resampled into visible phosphor cells, thresholded, and emitted as colored RGB dots rather than overlaid on the source. Targets the chunky CRT pixels in the references.',
+    controls: [
+      { label: 'Dot Pitch', param: 0, min: 0, max: 1, step: 0.01, default: 0.38, desc: 'Size of phosphor cells' },
+      { label: 'Threshold', param: 1, min: 0, max: 1, step: 0.01, default: 0.16, desc: 'Brightness needed before a dot emits' },
+      { label: 'Dot Focus', param: 2, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'How tight each phosphor dot appears' },
+      { label: 'Hue Bias',  param: 3, min: 0, max: 1, step: 0.01, default: 0.18, desc: 'Low cyan/teal, high pink/magenta' },
+    ] },
+  { name: 'edge_sync',   src: FX_EDGE_SYNC, group: 'studio', studioRole: 'enhance',
+    desc: 'Edge-driven sync chaos: Sobel edge strength drives horizontal row jitter and Bayer dither on contours—jagged, dissolving borders without washing the whole frame. Works with bent/analogue displacement passes.',
+    controls: [
+      { label: 'Edge Sense', param: 0, min: 0, max: 1, step: 0.01, default: 0.45, desc: 'How aggressively edges are detected' },
+      { label: 'Dispersion', param: 1, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Horizontal smear amount on strong edges' },
+      { label: 'Dither',     param: 2, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'Edge-only ordered dither intensity' },
+    ] },
+  { name: 'signal_echo', src: FX_SIGNAL_ECHO, group: 'studio', studioRole: 'reconstruct', defaultWeight: 0.9,
+    desc: 'Rightward signal backscatter: repeated decaying edge copies trail away from the subject with noisy cyan breakup, like the smeared contour cloud behind the figure in the side-profile reference.',
+    controls: [
+      { label: 'Spacing', param: 0, min: 0, max: 1, step: 0.01, default: 0.42, desc: 'Distance between repeated contour echoes' },
+      { label: 'Drift',   param: 1, min: 0, max: 1, step: 0.01, default: 0.6, desc: 'Vertical wobble of the echo field' },
+      { label: 'Decay',   param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'How fast repeated echoes fade' },
+      { label: 'Source',  param: 3, min: 0, max: 1, step: 0.01, default: 0.75, desc: 'How much of the original source remains underneath' },
+    ] },
+  { name: 'moire_zag',   src: FX_MOIRE_ZAG, group: 'studio', studioRole: 'enhance',
+    desc: 'Scan interference warp: high-frequency horizontal UV wobble vs scan position—moiré / zig-zag when stacked with scanbeam or fine sources. Light-weight decorative shimmer.',
+    controls: [
+      { label: 'Frequency', param: 0, min: 0, max: 1, step: 0.01, default: 0.5, desc: 'Spatial frequency of the zig pattern' },
+      { label: 'Amplitude', param: 1, min: 0, max: 1, step: 0.01, default: 0.35, desc: 'Horizontal displacement strength' },
+      { label: 'Speed',     param: 2, min: 0, max: 1, step: 0.01, default: 0.4, desc: 'Animation speed' },
+    ] },
+  { name: 'prism_bloom', src: FX_PRISM_BLOOM, group: 'studio', studioRole: 'glow', defaultWeight: 1.2,
+    desc: 'Off-axis prism bloom: bright regions smear through a diagonal magenta/cyan/yellow wash, approximating CRT glass scatter plus camera/lens flare seen in the saturated pink reference.',
+    controls: [
+      { label: 'Threshold', param: 0, min: 0, max: 1, step: 0.01, default: 0.32, desc: 'Brightness gate for bloom source' },
+      { label: 'Angle X',   param: 1, min: 0, max: 1, step: 0.01, default: 0.78, desc: 'Horizontal direction of the bloom streak' },
+      { label: 'Angle Y',   param: 2, min: 0, max: 1, step: 0.01, default: 0.7, desc: 'Vertical direction of the bloom streak' },
+      { label: 'Span',      param: 3, min: 0, max: 1, step: 0.01, default: 0.72, desc: 'Length of the off-axis glow wash' },
+      { label: 'Boost',     param: 4, min: 0, max: 1, step: 0.01, default: 0.62, desc: 'Additive glow strength' },
+    ] },
 ];
 
 function compile(gl, type, src){
@@ -1382,9 +1740,11 @@ export class Pipeline {
     this.programs.fitCover = program(gl, VERT, FX_FIT_COVER);
     this.programs.fitContain = program(gl, VERT, FX_FIT_CONTAIN);
     this.programs.fitTile = program(gl, VERT, FX_FIT_TILE);
+    this.programs.postGrade = program(gl, VERT, FX_POST_GRADE);
     this.srcW = 1; this.srcH = 1;
     this._fitProg = this.programs.fitContain;
     this._fitAlignY = 0.0;
+    this._postParams = [0, 1, 1, 1];
     for (const fx of EFFECTS) {
       this.programs[fx.name] = program(gl, VERT, fx.src);
     }
@@ -1451,6 +1811,10 @@ export class Pipeline {
     this._tileRows = tileRows != null ? tileRows : 4;
   }
 
+  setPostAdjustments({ exposure = 0, contrast = 1, saturation = 1, vibrance = 1 } = {}){
+    this._postParams = [exposure, contrast, saturation, vibrance].map(v => Number.isFinite(+v) ? +v : 0);
+  }
+
   // passes: array of { name, params: [p0..p3], intensity }
   render({ passes, time, seed, globalIntensity }){
     const gl = this.gl;
@@ -1486,6 +1850,9 @@ export class Pipeline {
                    pass.intensity * globalIntensity, pass.params);
       const tmp = read; read = write; write = tmp;
     }
+
+    this._drawTo(write, this.programs.postGrade, read.tex, this.fbHistory.tex, time, seed, 1.0, this._postParams);
+    { const tmp = read; read = write; write = tmp; }
 
     // final to screen
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);

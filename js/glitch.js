@@ -4,6 +4,14 @@
 
 import { EFFECTS } from './shaders.js';
 
+const EFFECT_META = new Map(EFFECTS.map(fx => [fx.name, fx]));
+const STUDIO_ROLE_ORDER = new Map([
+  ['carrier', 0],
+  ['reconstruct', 10],
+  ['enhance', 20],
+  ['glow', 30],
+]);
+
 // Mulberry32 deterministic PRNG so a seed reproduces the chaos sequence
 function makeRng(seed){
   let s = seed >>> 0;
@@ -40,13 +48,15 @@ export class ChaosEngine {
     this.lockedPasses = null;
     this.effectConfig = new Map(EFFECTS.map(fx => [fx.name, {
       enabled: true,
-      weight: 1,
-      amount: 1,
+      weight: fx.defaultWeight ?? 1,
+      amount: fx.defaultAmount ?? 1,
       params: {},       // sparse: { paramIndex: userSetValue, ... }
     }]));
     this.groupConfig = new Map();
     const groups = new Set(EFFECTS.map(fx => fx.group).filter(Boolean));
-    for (const g of groups) this.groupConfig.set(g, true);
+    /** Groups off by default so older presets and first load stay unchanged. */
+    const defaultOff = new Set(['studio']);
+    for (const g of groups) this.groupConfig.set(g, !defaultOff.has(g));
   }
 
   setSeed(seed){
@@ -93,7 +103,13 @@ export class ChaosEngine {
     this._refreshLockedPassesFromConfig();
   }
   setEffectConfig(name, cfg = {}){
-    const prev = this.effectConfig.get(name) || { enabled: true, weight: 1, amount: 1, params: {} };
+    const meta = EFFECT_META.get(name);
+    const prev = this.effectConfig.get(name) || {
+      enabled: true,
+      weight: meta?.defaultWeight ?? 1,
+      amount: meta?.defaultAmount ?? 1,
+      params: {},
+    };
     const next = {
       enabled: cfg.enabled ?? prev.enabled,
       weight: Math.max(0, cfg.weight ?? prev.weight),
@@ -126,6 +142,7 @@ export class ChaosEngine {
           intensity: base * (cfg?.amount ?? 1),
         };
       });
+    this.lockedPasses = this._stabilizeStudioPasses(this.lockedPasses);
   }
 
   _enabledEffects(){
@@ -172,6 +189,55 @@ export class ChaosEngine {
       fadeIn: 0.2 + this.rng()*0.4,
       fadeOut: 0.3 + this.rng()*0.6,
     };
+  }
+
+  _paramsFromDefaults(name){
+    const fx = EFFECT_META.get(name);
+    const params = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+    for (const ctrl of fx?.controls || []) {
+      if (ctrl.param != null && ctrl.default != null) params[ctrl.param] = ctrl.default;
+    }
+    const cfg = this.effectConfig.get(name);
+    for (const [idx, val] of Object.entries(cfg?.params || {})) {
+      params[+idx] = val;
+    }
+    return params;
+  }
+
+  _studioRoleOrder(pass){
+    const role = EFFECT_META.get(pass.name)?.studioRole;
+    return STUDIO_ROLE_ORDER.get(role) ?? 50;
+  }
+
+  _stabilizeStudioPasses(passes){
+    if (this.groupConfig.get('studio') === false) return passes;
+    const firstStudioIdx = passes.findIndex(pass => EFFECT_META.get(pass.name)?.group === 'studio');
+    if (firstStudioIdx < 0) return passes;
+
+    const prefix = passes.slice(0, firstStudioIdx).filter(pass => EFFECT_META.get(pass.name)?.group !== 'studio');
+    const suffix = passes.slice(firstStudioIdx).filter(pass => EFFECT_META.get(pass.name)?.group !== 'studio');
+    let studio = passes.filter(pass => EFFECT_META.get(pass.name)?.group === 'studio');
+
+    const carrierCfg = this.effectConfig.get('studio_carrier');
+    const hasCarrier = studio.some(pass => pass.name === 'studio_carrier');
+    if (!hasCarrier && carrierCfg?.enabled !== false) {
+      studio.unshift({
+        name: 'studio_carrier',
+        params: this._paramsFromDefaults('studio_carrier'),
+        intensity: 0.82 * (carrierCfg?.amount ?? 1),
+        hidden: true,
+      });
+    }
+
+    studio = studio
+      .map((pass, idx) => ({ pass, idx }))
+      .sort((a, b) => {
+        const roleDelta = this._studioRoleOrder(a.pass) - this._studioRoleOrder(b.pass);
+        return roleDelta || a.idx - b.idx;
+      })
+      .map(({ pass }) => pass);
+
+    return [...prefix, ...studio, ...suffix];
   }
 
   update(time){
@@ -244,7 +310,7 @@ export class ChaosEngine {
     if (time < this.burstUntil && this.burstName){
       out.push({ name: this.burstName, params: [this.rng(), this.rng(), this.rng(), this.rng(), this.rng(), this.rng()], intensity: 1.0 });
     }
-    return out;
+    return this._stabilizeStudioPasses(out);
   }
 
   passes(time){

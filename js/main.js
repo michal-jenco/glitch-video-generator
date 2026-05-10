@@ -188,9 +188,32 @@ const enableAllEffectsBtn = $('enableAllEffects');
 const disableAllEffectsBtn = $('disableAllEffects');
 const randomizeTogglesBtn = $('randomizeToggles');
 const randomizeParamsBtn = $('randomizeParams');
+const resetPostAdjustmentsBtn = $('resetPostAdjustments');
+const postExposureEl = $('postExposure'), postExposureOut = $('postExposureOut');
+const postContrastEl = $('postContrast'), postContrastOut = $('postContrastOut');
+const postSaturationEl = $('postSaturation'), postSaturationOut = $('postSaturationOut');
+const postVibranceEl = $('postVibrance'), postVibranceOut = $('postVibranceOut');
 const groupOriginalCb = $('groupOriginal');
 const groupAnalogueCb = $('groupAnalogue');
 const groupBentCb = $('groupBent');
+const groupStudioCb = $('groupStudio');
+
+function currentPostAdjustments(){
+  return {
+    exposure: +postExposureEl.value,
+    contrast: +postContrastEl.value,
+    saturation: +postSaturationEl.value,
+    vibrance: +postVibranceEl.value,
+  };
+}
+
+function syncPostAdjustments(){
+  postExposureOut.textContent = (+postExposureEl.value).toFixed(2);
+  postContrastOut.textContent = (+postContrastEl.value).toFixed(2);
+  postSaturationOut.textContent = (+postSaturationEl.value).toFixed(2);
+  postVibranceOut.textContent = (+postVibranceEl.value).toFixed(2);
+  pipeline.setPostAdjustments(currentPostAdjustments());
+}
 
 function syncOutputs(){
   intensityOut.textContent = (+intensityEl.value).toFixed(2);
@@ -198,8 +221,19 @@ function syncOutputs(){
   maxFxOut.textContent = maxFxEl.value;
 }
 syncOutputs();
+syncPostAdjustments();
 
 intensityEl.addEventListener('input', syncOutputs);
+for (const el of [postExposureEl, postContrastEl, postSaturationEl, postVibranceEl]) {
+  el.addEventListener('input', syncPostAdjustments);
+}
+resetPostAdjustmentsBtn.addEventListener('click', () => {
+  postExposureEl.value = 0;
+  postContrastEl.value = 1;
+  postSaturationEl.value = 1;
+  postVibranceEl.value = 1;
+  syncPostAdjustments();
+});
 chaosRateEl.addEventListener('input', () => {
   syncOutputs();
   chaos.setChaosRate(+chaosRateEl.value);
@@ -525,6 +559,7 @@ function collectState() {
     fitMode,
     tileCols,
     tileRows,
+    postAdjustments: currentPostAdjustments(),
   });
 }
 
@@ -533,6 +568,14 @@ function applyState(state) {
   if (state.intensity != null) { intensityEl.value = state.intensity; }
   if (state.chaosRate != null) { chaosRateEl.value = state.chaosRate; chaos.setChaosRate(+state.chaosRate); }
   if (state.maxFx != null) { maxFxEl.value = state.maxFx; chaos.setMaxActive(+state.maxFx); }
+  if (state.postAdjustments) {
+    const p = state.postAdjustments;
+    if (p.exposure != null) postExposureEl.value = p.exposure;
+    if (p.contrast != null) postContrastEl.value = p.contrast;
+    if (p.saturation != null) postSaturationEl.value = p.saturation;
+    if (p.vibrance != null) postVibranceEl.value = p.vibrance;
+    syncPostAdjustments();
+  }
   const allGroups = [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))];
   const groups = state.activeGroups || ['original'];
   for (const g of allGroups){
@@ -741,9 +784,11 @@ function mountEffectControls(){
     for (const fx of fxList){
       const card = document.createElement('div');
       card.className = 'fxCard';
+      const amountDefault = fx.defaultAmount ?? 1;
+      const weightDefault = fx.defaultWeight ?? 1;
       let inner = `<div class="fxTop"><label><input type="checkbox" data-fx="${fx.name}" data-kind="enabled" checked><span class="fxName">${fx.name}</span></label><span class="tooltip-trigger" data-fx="${fx.name}" title="Show details">\u24D8</span></div>`;
-      inner += `<label class="slider"><span>amt</span><input type="range" min="0" max="2" step="0.01" value="1" data-fx="${fx.name}" data-kind="amount"><output>1.00</output></label>`;
-      inner += `<label class="slider"><span>freq</span><input type="range" min="0" max="3" step="0.01" value="1" data-fx="${fx.name}" data-kind="weight"><output>1.00</output></label>`;
+      inner += `<label class="slider"><span>amt</span><input type="range" min="0" max="2" step="0.01" value="${amountDefault}" data-fx="${fx.name}" data-kind="amount"><output>${amountDefault.toFixed(2)}</output></label>`;
+      inner += `<label class="slider"><span>freq</span><input type="range" min="0" max="3" step="0.01" value="${weightDefault}" data-fx="${fx.name}" data-kind="weight"><output>${weightDefault.toFixed(2)}</output></label>`;
       if (fx.controls){
         for (const ctrl of fx.controls){
           inner += `<label class="slider paramSlider"><span>${ctrl.label}</span><input type="range" min="${ctrl.min}" max="${ctrl.max}" step="${ctrl.step}" value="${ctrl.default}" data-fx="${fx.name}" data-kind="param" data-param="${ctrl.param}"><output>${ctrl.default.toFixed(2)}</output></label>`;
@@ -804,6 +849,10 @@ function mountEffectControls(){
   });
 }
 mountEffectControls();
+if (groupStudioCb && !groupStudioCb.checked){
+  const studioFx = document.querySelector('.fxGroup[data-group="studio"]');
+  if (studioFx) studioFx.style.display = 'none';
+}
 
 // ---------- group toggles ----------
 groupOriginalCb.addEventListener('change', () => {
@@ -824,6 +873,13 @@ groupBentCb.addEventListener('change', () => {
   const active = groupBentCb.checked;
   chaos.setGroupEnabled('bent', active);
   const wrapper = document.querySelector('.fxGroup[data-group="bent"]');
+  if (wrapper) wrapper.style.display = active ? '' : 'none';
+});
+
+groupStudioCb.addEventListener('change', () => {
+  const active = groupStudioCb.checked;
+  chaos.setGroupEnabled('studio', active);
+  const wrapper = document.querySelector('.fxGroup[data-group="studio"]');
   if (wrapper) wrapper.style.display = active ? '' : 'none';
 });
 
