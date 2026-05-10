@@ -45,8 +45,9 @@ let tileRows = 4;
 
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const portrait = document.body.classList.contains('portrait');
   const baseW = window.innerWidth * dpr;
-  const baseH = window.innerHeight * dpr;
+  const baseH = (portrait ? window.innerHeight * 0.5 : window.innerHeight) * dpr;
   const ratio = ASPECT_RATIOS[aspectLock] ?? null;
 
   let w, h;
@@ -105,7 +106,7 @@ function getOrientation(){
 
 let _webcamReorientTimer = null;
 function updateFitMode(){
-  const alignY = fitMode === 'contain' && getOrientation() === 'portrait' ? 1.0 : 0.0;
+  const alignY = 0.0;
   const effectiveMode = (fitMode === 'contain' && aspectLock !== 'free') ? 'cover' : fitMode;
   pipeline.setFitMode(effectiveMode, alignY, tileCols, tileRows);
 }
