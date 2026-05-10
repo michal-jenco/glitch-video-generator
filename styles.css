@@ -71,17 +71,19 @@ label:has(> select) > select { width: auto; }
 #panel.hidden { transform: translateX(380px); }
 
 body.portrait #panel {
-  top: auto;
+  top: 12px;
   right: 12px;
   left: 12px;
-  bottom: 12px;
+  bottom: auto;
   width: auto;
   max-height: 50vh;
 }
-body.portrait #panel.hidden { transform: translateY(120%); }
+body.portrait #panel.hidden { transform: translateY(-120%); }
 body.portrait #panelToggle {
-  right: auto;
-  left: 12px;
+  top: auto;
+  bottom: 12px;
+  right: 12px;
+  left: auto;
 }
 
 #panel header h1 {
