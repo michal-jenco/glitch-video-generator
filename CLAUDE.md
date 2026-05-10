@@ -26,6 +26,11 @@
 - **Button-label sync**: functions named `update*Btns()` are called after state changes to refresh UI text/icons.
 - **Source providers** (`js/sources.js`): `ProceduralSource`, `ImageSource`, `VideoSource`, `WebcamSource`. Each exposes `.ready()`, `.frame(time)`, `.stop()`.
 - **Presets** (`js/presets.js`): saved to `localStorage`, optionally encoded into URL hash for sharing.
+
+### Share links (`#p=…`) and legacy presets
+- **Verbose JSON (no `v` key)** — original share format: full `captureState`-shaped object. These never stored `activeGroups`; decoding runs `migrateVerboseShareLink`, which sets `activeGroups` to `['original']` when absent so behaviour matches the pre–effect-groups app (`applyState` also defaults missing groups this way).
+- **Compact JSON (`v >= 2`)** — short keys (`s`, `i`, `fx`, `fg`, …). **`fg` is always written** on encode so loads never infer wrong groups. **Legacy compact shares that omit `fg`** expand with `activeGroups` defaulting to `['original','analogue']` (historical meaning when Circuit Bend did not exist). Links created with bent on but without `fg` cannot be distinguished from original+analogue-only shares.
+- Shader tweaks since v1 may still cause minor visual drift versus ancient builds; group/effect selection is what this migration fixes.
 - **Recording** (`js/recorder.js`): 3-tier dispatcher — native MediaRecorder → WebCodecs → ffmpeg.wasm fallback.
 
 ## File map

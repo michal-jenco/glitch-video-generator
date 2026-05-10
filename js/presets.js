@@ -7,6 +7,8 @@ import { EFFECTS } from './shaders.js';
 const STORAGE_KEY = 'glitch_presets_v1';
 const FX_NAMES = EFFECTS.map(fx => fx.name);
 const FX_INDEX = new Map(FX_NAMES.map((n, i) => [n, i]));
+/** When fg was omitted (legacy compact links), shares meant original+analogue on — bent did not exist yet. */
+const LEGACY_DEFAULT_GROUPS = ['original', 'analogue'];
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
 
@@ -68,11 +70,9 @@ function compactState(state) {
   if (state.tileCols != null && +state.tileCols !== 4) out.tc = +state.tileCols;
   if (state.tileRows != null && +state.tileRows !== 4) out.tr = +state.tileRows;
 
-  // Groups: only emit if not both active (default)
+  // Always encode fg so expandState never guesses (legacy links without fg still migrate below).
   const groups = state.activeGroups || ['original', 'analogue'];
-  if (groups.length < 2 || !groups.includes('original') || !groups.includes('analogue')) {
-    out.fg = groups;
-  }
+  out.fg = groups;
 
   // Effects: emit only those differing from defaults (enabled, amt=1, wgt=1).
   const fx = [];
@@ -131,7 +131,8 @@ function expandState(c) {
     fitMode: c.fm ?? 'contain',
     tileCols: c.tc ?? 4,
     tileRows: c.tr ?? 4,
-    activeGroups: c.fg || [...new Set(EFFECTS.map(fx => fx.group).filter(Boolean))],
+    // Missing fg: old compact shares omitted it when original+analogue were both on — never included bent.
+    activeGroups: c.fg ?? LEGACY_DEFAULT_GROUPS,
     effects: FX_NAMES.map(name => ({
       name, enabled: true, amount: 1, weight: 1, params: {},
     })),
@@ -177,6 +178,16 @@ export function stateFromHash(hash = window.location.hash) {
     let b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const obj = JSON.parse(decodeURIComponent(escape(atob(b64))));
-    return obj && obj.v >= 2 ? expandState(obj) : obj;
+    if (!obj) return null;
+    if (obj.v >= 2) return expandState(obj);
+    return migrateVerboseShareLink(obj);
   } catch { return null; }
+}
+
+// Pre-compact / v1 URL hash format: full JSON, no `v` key — only the original effect library existed.
+function migrateVerboseShareLink(obj) {
+  return {
+    ...obj,
+    activeGroups: obj.activeGroups ?? ['original'],
+  };
 }
