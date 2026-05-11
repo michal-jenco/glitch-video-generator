@@ -59,6 +59,14 @@ export class Recorder {
     this.ffmpeg = null;
     this.ffmpegLoaded = false;
     this.mode = 'webm-ffmpeg'; // overwritten by detectRecorderMode() at startup
+    // Safety-net MediaRecorder running in parallel with WebCodecs. Only used
+    // when mode === 'webcodecs'. Captures webm so we have a usable blob if
+    // WebCodecs throws at flush/stop time despite passing the upfront probe.
+    this.backupRecorder = null;
+    this.backupChunks = [];
+    this.backupFormat = null;
+    this.backupStopPromise = null;
+    this.backupFailed = false;
   }
 
   isRecording(){
@@ -89,7 +97,12 @@ export class Recorder {
         this.mode = 'webm-ffmpeg';
         // fall through to MediaRecorder path below
       }
-      if (this.webcodecsRec) return;
+      if (this.webcodecsRec){
+        // Run a webm MediaRecorder in parallel as a safety net. If WebCodecs
+        // fails at flush/stop time we promote this blob in stop().
+        this._startBackupRecorder();
+        return;
+      }
     }
 
     const stream = this.canvas.captureStream(60);
@@ -110,16 +123,45 @@ export class Recorder {
     if (this.webcodecsRec?.isRecording()){
       this.lastDurationSec = (performance.now() - this.startedAt) / 1000;
       this.lastTimestamp = new Date().toISOString().replace(/[:.]/g,'-');
+
+      // Kick off backup stop in parallel so its onstop event flushes chunks.
+      if (this.backupRecorder && this.backupRecorder.state === 'recording'){
+        try { this.backupRecorder.stop(); }
+        catch (e) { console.warn('backup recorder stop threw', e); this.backupFailed = true; }
+      }
+
+      let wcBlob = null;
+      let wcError = null;
       try {
-        const blob = await this.webcodecsRec.stop();
+        wcBlob = await this.webcodecsRec.stop();
+      } catch (e) {
+        console.error('webcodecs stop failed', e);
+        wcError = e;
+      }
+      this.webcodecsRec = null;
+
+      if (this.backupStopPromise){
+        try { await this.backupStopPromise; }
+        catch (e) { console.warn('backup stop promise rejected', e); this.backupFailed = true; }
+      }
+
+      if (wcBlob && !wcError){
+        if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
+        this.lastBlob = wcBlob;
+        this.lastObjectUrl = URL.createObjectURL(wcBlob);
+        // recordedFormat already mp4 from start(); leave as-is.
+      } else if (!this.backupFailed && this.backupChunks.length > 0 && this.backupFormat){
+        // WebCodecs failed — promote backup to primary.
+        const blob = new Blob(this.backupChunks, { type: 'video/webm' });
         if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
         this.lastBlob = blob;
         this.lastObjectUrl = URL.createObjectURL(blob);
-      } catch (e) {
-        console.error('webcodecs stop failed', e);
+        this.recordedFormat = this.backupFormat;
+      } else {
         this.lastBlob = null;
       }
-      this.webcodecsRec = null;
+      this._clearBackup();
+
       if (typeof this.onFinished === 'function') this.onFinished(this.lastBlob);
       return;
     }
@@ -141,6 +183,49 @@ export class Recorder {
     if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
     this.lastObjectUrl = URL.createObjectURL(this.lastBlob);
     if (typeof this.onFinished === 'function') this.onFinished(this.lastBlob);
+  }
+
+  _startBackupRecorder(){
+    const webmCandidates = RECORDER_CANDIDATES.filter(c => c.container === 'webm');
+    let fmt = null;
+    for (const c of webmCandidates){
+      if (MediaRecorder.isTypeSupported(c.mime)){ fmt = c; break; }
+    }
+    if (!fmt) return;
+
+    let stream;
+    try { stream = this.canvas.captureStream(60); }
+    catch (e) { console.warn('backup recorder: captureStream failed', e); return; }
+
+    let rec;
+    try { rec = new MediaRecorder(stream, { mimeType: fmt.mime, videoBitsPerSecond: 12_000_000 }); }
+    catch (e) { console.warn('backup recorder: ctor failed', e); return; }
+
+    this.backupChunks = [];
+    this.backupFailed = false;
+    this.backupFormat = fmt;
+    this.backupRecorder = rec;
+    this.backupStopPromise = new Promise(resolve => {
+      rec.ondataavailable = e => { if (e.data && e.data.size) this.backupChunks.push(e.data); };
+      rec.onerror = e => { console.warn('backup recorder error', e); this.backupFailed = true; };
+      rec.onstop = () => resolve();
+    });
+
+    try { rec.start(250); }
+    catch (e) {
+      console.warn('backup recorder: start failed', e);
+      this.backupRecorder = null;
+      this.backupStopPromise = null;
+      this.backupFormat = null;
+    }
+  }
+
+  _clearBackup(){
+    this.backupRecorder = null;
+    this.backupChunks = [];
+    this.backupFormat = null;
+    this.backupStopPromise = null;
+    this.backupFailed = false;
   }
 
   hasRecording(){
