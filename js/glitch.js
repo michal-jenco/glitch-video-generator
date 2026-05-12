@@ -46,6 +46,8 @@ export class ChaosEngine {
     this.burstName = null;
     this.locked = false;
     this.lockedPasses = null;
+    this.mode = 'automatic'; // 'automatic' | 'manual'
+    this.manualOrder = [];   // ordered list of effect names — tick order in manual mode
     this.effectConfig = new Map(EFFECTS.map(fx => [fx.name, {
       enabled: true,
       weight: fx.defaultWeight ?? 1,
@@ -69,6 +71,42 @@ export class ChaosEngine {
 
   setMaxActive(n){ this.maxActive = Math.max(1, Math.min(10, n|0)); }
   setChaosRate(r){ this.chaosRate = Math.max(0, Math.min(1, r)); }
+
+  setMode(mode){
+    const next = mode === 'manual' ? 'manual' : 'automatic';
+    const wasAuto = this.mode !== 'manual';
+    this.mode = next;
+    // First entry into manual mode with nothing in the chain: seed it from
+    // whatever is currently enabled, in EFFECTS order — so the user sees a
+    // sensible starting point rather than a blank canvas.
+    if (next === 'manual' && wasAuto && this.manualOrder.length === 0){
+      this.manualOrder = EFFECTS
+        .filter(fx => this.effectConfig.get(fx.name)?.enabled)
+        .map(fx => fx.name);
+    }
+  }
+
+  setManualOrder(arr){
+    const seen = new Set();
+    this.manualOrder = [];
+    for (const name of arr || []){
+      if (typeof name !== 'string' || !EFFECT_META.has(name) || seen.has(name)) continue;
+      seen.add(name);
+      this.manualOrder.push(name);
+    }
+  }
+
+  addToManualOrder(name){
+    if (!EFFECT_META.has(name)) return;
+    if (this.manualOrder.includes(name)) return;
+    this.manualOrder.push(name);
+  }
+
+  removeFromManualOrder(name){
+    const i = this.manualOrder.indexOf(name);
+    if (i >= 0) this.manualOrder.splice(i, 1);
+  }
+
   setLocked(locked, time = 0){
     this.locked = !!locked;
     if (this.locked){
@@ -240,7 +278,25 @@ export class ChaosEngine {
     return [...prefix, ...studio, ...suffix];
   }
 
+  manualPasses(){
+    const fxGroup = new Map(EFFECTS.map(f => [f.name, f.group]));
+    const out = [];
+    for (const name of this.manualOrder){
+      const cfg = this.effectConfig.get(name);
+      if (!cfg || !cfg.enabled) continue;
+      const g = fxGroup.get(name) || 'original';
+      if (this.groupConfig.get(g) === false) continue;
+      out.push({
+        name,
+        params: this._paramsFromDefaults(name),
+        intensity: cfg.amount ?? 1,
+      });
+    }
+    return this._stabilizeStudioPasses(out);
+  }
+
   update(time){
+    if (this.mode === 'manual') return;
     if (this.locked) return;
 
     // Remove effects that got disabled via UI or belong to a disabled group.
@@ -314,11 +370,13 @@ export class ChaosEngine {
   }
 
   passes(time){
+    if (this.mode === 'manual') return this.manualPasses();
     if (this.locked) return this.lockedPasses || [];
     return this._computePasses(time);
   }
 
   describe(){
+    if (this.mode === 'manual') return this.manualPasses().map(p => p.name).join(' › ');
     return this.active.map(e => e.name).join(' › ');
   }
 }

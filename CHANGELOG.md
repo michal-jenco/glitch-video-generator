@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-05-12 — Manual mode + UX polish (v4)
+
+### New: Manual mode
+
+You can now build effect chains by hand instead of leaving it to the chaos
+engine. A segmented **Automatic / Manual** toggle at the top of the CHAOS
+section switches modes; both modes keep their state when you flip between
+them. In manual mode, the effect checkboxes you tick (in the order you tick
+them) define the exact pipeline that runs — no random scheduling, no fade
+envelopes, just a static chain. Each effect's existing `amt` and per-param
+sliders apply directly.
+
+- First entry into manual mode auto-seeds the chain from whatever is currently
+  enabled, so you start with a sensible visible state instead of a blank
+  canvas. From there it's all you.
+- Chaos-only controls (chaos rate, max effects, seed, lock chain) hide in
+  manual mode. They're not relevant there.
+
+### New: collapsing effect cards
+
+Each effect card now collapses to just its checkbox + name when unticked.
+Sliders (`amt`, `freq`, named params) only show when the effect is enabled —
+much less scroll, much faster scan of what's actually on.
+
+### Changed: hidden `freq` in manual mode
+
+The `freq` slider controls how often the chaos engine picks an effect from
+the pool. It does nothing in manual mode, so it's hidden there.
+
+### Changed: preset / share-link v4
+
+New compact keys `mo` (mode) and `mor` (manual chain, as effect names). Old
+v3 / v2 / v1 links keep decoding to automatic mode — fully backward compatible.
+
+### Fixed: `moire_zag` and `edge_sync` were nearly invisible
+
+Both studio effects had displacement ceilings calibrated in fractions of a
+pixel on modern resolutions. Bumped:
+- `moire_zag` amp `3.5 → 35.0` (10× horizontal zig-zag at max)
+- `edge_sync` disp `0.045 → 0.25`, jitter scale `70 → 300` (~12× the edge
+  shimmer at max)
+
+### Fixed: local dev server `.mjs` MIME (black screen on localhost)
+
+Python's `http.server` serves `.mjs` files as `text/plain`, which Chrome
+refuses to load as an ES module — breaking the import chain and leaving the
+page totally black. New `serve.py` wrapper registers the correct
+`application/javascript` MIME and is what `.claude/launch.json` now uses.
+
+### Changed: CLAUDE.md
+
+Build/Run instructions point to `py serve.py 8765` and explain the MIME
+pitfall; verification commands now check served content-type.
+
 ## 2026-05-09 — Analogue effect expansion (v3)
 
 ### New: 19 analogue CRT / NTSC / VHS effects

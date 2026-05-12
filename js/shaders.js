@@ -1247,8 +1247,8 @@ void main(){
   edge = smoothstep(0.0, 0.35, edge * sens * 0.08);
   float row = floor(vUv.y * uResolution.y);
   float jitter = (hash11(row * 2.3 + uSeed * 0.07) - 0.5);
-  float disp = edge * mix(0.0, 0.045, uParam1 * uIntensity);
-  vec2 uv = vUv + vec2(jitter * disp * 70.0 * px.x, 0.0);
+  float disp = edge * mix(0.0, 0.25, uParam1 * uIntensity);
+  vec2 uv = vUv + vec2(jitter * disp * 300.0 * px.x, 0.0);
   vec3 col = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
   vec2 q = floor(vUv * uResolution);
   float bayer = fract(sin(dot(q + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
@@ -1291,7 +1291,7 @@ const FX_MOIRE_ZAG = HEAD + `
 void main(){
   vec2 px = 1.0 / uResolution;
   float freq = mix(0.35, 3.2, uParam0);
-  float amp = mix(0.0, 3.5, uParam1 * uIntensity);
+  float amp = mix(0.0, 35.0, uParam1 * uIntensity);
   float spd = mix(0.25, 4.5, uParam2);
   float yp = vUv.y * uResolution.y;
   float zig = sin(yp * 0.045 * freq + uTime * spd + vUv.x * uResolution.x * 0.02);

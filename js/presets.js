@@ -30,7 +30,7 @@ export function deletePreset(name) {
 }
 
 // Serialise state into a plain object
-export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap, fitMode, tileCols, tileRows, postAdjustments }) {
+export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, activeGroups, source, proceduralPattern, chainLocked, webcamFacing, gifDuration, lockedPasses, aspectLock, resolutionCap, fitMode, tileCols, tileRows, postAdjustments, mode, manualOrder }) {
   const post = postAdjustments || {};
   return {
     seed,
@@ -55,6 +55,8 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
       vibrance: post.vibrance != null ? +post.vibrance : 1,
     },
     activeGroups: activeGroups || ['original', 'analogue'],
+    mode: mode === 'manual' ? 'manual' : 'automatic',
+    manualOrder: Array.isArray(manualOrder) ? [...manualOrder] : [],
     effects: [...effectConfig.entries()].map(([name, cfg]) => ({ name, ...cfg })),
   };
 }
@@ -62,7 +64,13 @@ export function captureState({ seed, intensity, chaosRate, maxFx, effectConfig, 
 // Compact state for URL hash. Short keys, effect-name -> index, drop defaults,
 // round floats. Schema v3 adds group state (fg) and named param overrides (fxp).
 function compactState(state) {
-  const out = { v: 3, s: state.seed };
+  const out = { v: 4, s: state.seed };
+  if (state.mode === 'manual') {
+    out.mo = 1;
+    // Store names (not indices) so chains survive effect-list re-ordering.
+    const mor = (state.manualOrder || []).filter(n => FX_INDEX.has(n));
+    if (mor.length) out.mor = mor;
+  }
   if (state.intensity != null) out.i = r2(+state.intensity);
   if (state.chaosRate != null) out.c = r2(+state.chaosRate);
   if (state.maxFx != null) out.m = +state.maxFx;
@@ -151,6 +159,8 @@ function expandState(c) {
     },
     // Missing fg: old compact shares omitted it when original+analogue were both on — never included bent.
     activeGroups: c.fg ?? LEGACY_DEFAULT_GROUPS,
+    mode: c.mo === 1 ? 'manual' : 'automatic',
+    manualOrder: Array.isArray(c.mor) ? c.mor.filter(n => FX_INDEX.has(n)) : [],
     effects: FX_NAMES.map(name => ({
       name, enabled: true, amount: 1, weight: 1, params: {},
     })),

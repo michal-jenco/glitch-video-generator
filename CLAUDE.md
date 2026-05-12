@@ -1,15 +1,15 @@
 # CLAUDE.md
 
 ## Build / Run
-- No build step. Static site: open `index.html` in browser or serve with `python3 -m http.server`.
-- **After finishing work**, always start the dev server so the user can preview:
+- No build step. Static site: serve via the bundled `serve.py` wrapper — `py serve.py 8765` (or `python3 serve.py 8765`). Do **not** use bare `python3 -m http.server`: it serves `.mjs` as `text/plain`, which Chrome refuses to load as a module, leaving the page black.
+- **After finishing work**, always start the dev server so the user can preview (`.claude/launch.json` already points at this):
   ```bash
-  lsof -ti:8088 | xargs kill -9 2>/dev/null; sleep 0.3; nohup python3 -m http.server 8088 > /dev/null 2>&1 &
+  py serve.py 8765
   ```
-- **Verify the server works** before reporting done — all JS files must serve with HTTP 200:
+- **Verify the server works** before reporting done — all JS files must serve with HTTP 200 and `.mjs` must be `application/javascript`:
   ```bash
-  for f in js/shaders.js js/glitch.js js/presets.js js/main.js; do
-    curl -s -o /dev/null -w "%{http_code} " http://localhost:8088/$f; done; echo
+  for f in js/shaders.js js/glitch.js js/presets.js js/main.js vendor/mp4-muxer/mp4-muxer.mjs; do
+    curl -s -o /dev/null -w "%{http_code} %{content_type} $f\n" http://localhost:8765/$f; done
   ```
 - **Validate JS integrity** — check brace balance across all JS files:
   ```bash

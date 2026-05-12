@@ -120,6 +120,14 @@ body.portrait #stage {
 .row.hidden { display: none; }
 .hidden { display: none !important; }
 
+.modeToggle {
+  gap: 14px;
+  padding: 4px 6px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+}
+.modeToggle label { font-weight: bold; }
+
 label {
   display: inline-flex;
   align-items: center;
@@ -254,6 +262,10 @@ button.recording {
   padding: 6px;
   background: rgba(0, 0, 0, 0.25);
 }
+.fxCard:not(.enabled) .fxBody { display: none; }
+.fxCard:not(.enabled) .fxName { opacity: 0.55; }
+.fxCard .fxBody { margin-top: 2px; }
+body.manual-mode .freqSlider { display: none; }
 
 .fxTop {
   display: flex;

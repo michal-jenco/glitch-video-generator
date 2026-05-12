@@ -117,31 +117,36 @@
 
   <section>
     <h2>CHAOS</h2>
+    <div class="row modeToggle" id="modeToggleRow">
+      <label><input type="radio" name="mode" id="modeAutomatic" value="automatic" checked> Automatic</label>
+      <label><input type="radio" name="mode" id="modeManual" value="manual"> Manual</label>
+    </div>
     <label class="slider">
       <span>intensity</span>
       <input type="range" id="intensity" min="0" max="1" step="0.01" value="0.7">
       <output id="intensityOut">0.70</output>
     </label>
-    <label class="slider">
+    <label class="slider" id="chaosRateRow">
       <span>chaos rate</span>
       <input type="range" id="chaosRate" min="0" max="1" step="0.01" value="0.5">
       <output id="chaosRateOut">0.50</output>
     </label>
-    <label class="slider">
+    <label class="slider" id="maxFxRow">
       <span>max effects</span>
       <input type="range" id="maxFx" min="1" max="10" step="1" value="4">
       <output id="maxFxOut">4</output>
     </label>
-    <div class="row">
+    <div class="row" id="seedRow">
       <label class="seed">seed
         <input type="text" id="seed" value="0xCAFEBABE">
       </label>
       <button id="reseed">↻</button>
     </div>
-    <div class="row">
+    <div class="row" id="chainButtonsRow">
       <button id="lockChainBtn">lock chain</button>
       <button id="pauseBtn">pause</button>
     </div>
+    <p class="hint hidden" id="manualHint">Manual mode: tick effects below to build a chain. Tick order = pipeline order.</p>
   </section>
 
   <section>

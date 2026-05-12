@@ -197,6 +197,44 @@ const groupOriginalCb = $('groupOriginal');
 const groupAnalogueCb = $('groupAnalogue');
 const groupBentCb = $('groupBent');
 const groupStudioCb = $('groupStudio');
+const modeAutomaticRadio = $('modeAutomatic');
+const modeManualRadio = $('modeManual');
+const chaosRateRow = $('chaosRateRow');
+const maxFxRow = $('maxFxRow');
+const seedRow = $('seedRow');
+const manualHint = $('manualHint');
+
+function applyModeUI(mode){
+  const manual = mode === 'manual';
+  chaosRateRow.classList.toggle('hidden', manual);
+  maxFxRow.classList.toggle('hidden', manual);
+  seedRow.classList.toggle('hidden', manual);
+  if (lockChainBtn) lockChainBtn.classList.toggle('hidden', manual);
+  if (manualHint) manualHint.classList.toggle('hidden', !manual);
+  if (modeAutomaticRadio) modeAutomaticRadio.checked = !manual;
+  if (modeManualRadio) modeManualRadio.checked = manual;
+  document.body.classList.toggle('manual-mode', manual);
+}
+
+function syncManualCheckboxesFromChaos(){
+  // Reflect chaos.effectConfig.enabled back into the checkboxes — used when
+  // switching to manual mode auto-populates manualOrder from currently-enabled
+  // effects (cosmetic only — they were already ticked).
+  const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
+  checks.forEach(el => {
+    const cfg = chaos.effectConfig.get(el.dataset.fx);
+    if (cfg) el.checked = !!cfg.enabled;
+  });
+}
+
+function setMode(mode){
+  chaos.setMode(mode);
+  applyModeUI(chaos.mode);
+  syncManualCheckboxesFromChaos();
+}
+
+if (modeAutomaticRadio) modeAutomaticRadio.addEventListener('change', () => { if (modeAutomaticRadio.checked) setMode('automatic'); });
+if (modeManualRadio) modeManualRadio.addEventListener('change', () => { if (modeManualRadio.checked) setMode('manual'); });
 
 function currentPostAdjustments(){
   return {
@@ -560,6 +598,8 @@ function collectState() {
     tileCols,
     tileRows,
     postAdjustments: currentPostAdjustments(),
+    mode: chaos.mode,
+    manualOrder: chaos.manualOrder,
   });
 }
 
@@ -590,7 +630,7 @@ function applyState(state) {
     for (const fx of state.effects) {
       chaos.setEffectConfig(fx.name, { enabled: fx.enabled, amount: fx.amount, weight: fx.weight, params: fx.params || {} });
       const cb = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="enabled"]`);
-      if (cb) cb.checked = fx.enabled;
+      if (cb) { cb.checked = fx.enabled; cb.closest('.fxCard')?.classList.toggle('enabled', !!fx.enabled); }
       const amt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="amount"]`);
       if (amt) { amt.value = fx.amount; const o = amt.parentElement.querySelector('output'); if (o) o.textContent = (+fx.amount).toFixed(2); }
       const wgt = effectsList.querySelector(`input[data-fx="${fx.name}"][data-kind="weight"]`);
@@ -656,6 +696,17 @@ function applyState(state) {
       lockChainBtn.textContent = 'lock chain';
       chaos.setLocked(false);
     }
+  }
+  // Restore mode + manual chain order. Must come AFTER state.effects loop —
+  // setEffectConfig doesn't touch manualOrder at the engine level, so this
+  // explicit restore is what carries tick order across share-link round trips.
+  if (Array.isArray(state.manualOrder)) chaos.setManualOrder(state.manualOrder);
+  if (state.mode) {
+    // Pass through chaos.setMode (not setMode wrapper) so the auto-populate
+    // branch is skipped when manualOrder was just restored from the share link.
+    chaos.setMode(state.mode);
+    applyModeUI(chaos.mode);
+    syncManualCheckboxesFromChaos();
   }
   syncOutputs();
 }
@@ -783,18 +834,18 @@ function mountEffectControls(){
 
     for (const fx of fxList){
       const card = document.createElement('div');
-      card.className = 'fxCard';
+      card.className = 'fxCard enabled';
       const amountDefault = fx.defaultAmount ?? 1;
       const weightDefault = fx.defaultWeight ?? 1;
       let inner = `<div class="fxTop"><label><input type="checkbox" data-fx="${fx.name}" data-kind="enabled" checked><span class="fxName">${fx.name}</span></label><span class="tooltip-trigger" data-fx="${fx.name}" title="Show details">\u24D8</span></div>`;
-      inner += `<label class="slider"><span>amt</span><input type="range" min="0" max="2" step="0.01" value="${amountDefault}" data-fx="${fx.name}" data-kind="amount"><output>${amountDefault.toFixed(2)}</output></label>`;
-      inner += `<label class="slider"><span>freq</span><input type="range" min="0" max="3" step="0.01" value="${weightDefault}" data-fx="${fx.name}" data-kind="weight"><output>${weightDefault.toFixed(2)}</output></label>`;
+      let body = `<label class="slider"><span>amt</span><input type="range" min="0" max="2" step="0.01" value="${amountDefault}" data-fx="${fx.name}" data-kind="amount"><output>${amountDefault.toFixed(2)}</output></label>`;
+      body += `<label class="slider freqSlider"><span>freq</span><input type="range" min="0" max="3" step="0.01" value="${weightDefault}" data-fx="${fx.name}" data-kind="weight"><output>${weightDefault.toFixed(2)}</output></label>`;
       if (fx.controls){
         for (const ctrl of fx.controls){
-          inner += `<label class="slider paramSlider"><span>${ctrl.label}</span><input type="range" min="${ctrl.min}" max="${ctrl.max}" step="${ctrl.step}" value="${ctrl.default}" data-fx="${fx.name}" data-kind="param" data-param="${ctrl.param}"><output>${ctrl.default.toFixed(2)}</output></label>`;
+          body += `<label class="slider paramSlider"><span>${ctrl.label}</span><input type="range" min="${ctrl.min}" max="${ctrl.max}" step="${ctrl.step}" value="${ctrl.default}" data-fx="${fx.name}" data-kind="param" data-param="${ctrl.param}"><output>${ctrl.default.toFixed(2)}</output></label>`;
         }
       }
-      card.innerHTML = inner;
+      card.innerHTML = inner + `<div class="fxBody">${body}</div>`;
       wrapper.appendChild(card);
     }
 
@@ -831,6 +882,9 @@ function mountEffectControls(){
     const kind = t.dataset.kind;
     if (kind === 'enabled'){
       chaos.setEffectConfig(name, { enabled: t.checked });
+      if (t.checked) chaos.addToManualOrder(name);
+      else chaos.removeFromManualOrder(name);
+      t.closest('.fxCard')?.classList.toggle('enabled', t.checked);
       return;
     }
     const value = +t.value;
@@ -886,26 +940,35 @@ groupStudioCb.addEventListener('change', () => {
 randomizeTogglesBtn.addEventListener('click', () => {
   const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
   let enabledCount = 0;
+  // Clear manual order first so the new randomised set defines tick order.
+  chaos.setManualOrder([]);
   checks.forEach((el) => {
     const on = Math.random() > 0.35;
     el.checked = on;
+    el.closest('.fxCard')?.classList.toggle('enabled', on);
     if (on) enabledCount++;
     chaos.setEffectConfig(el.dataset.fx, { enabled: on });
+    if (on) chaos.addToManualOrder(el.dataset.fx);
   });
   // Keep at least one effect enabled.
   if (enabledCount === 0 && checks.length) {
     const fallback = checks[Math.floor(Math.random() * checks.length)];
     fallback.checked = true;
+    fallback.closest('.fxCard')?.classList.add('enabled');
     chaos.setEffectConfig(fallback.dataset.fx, { enabled: true });
+    chaos.addToManualOrder(fallback.dataset.fx);
   }
 });
 
 enableAllEffectsBtn.addEventListener('click', () => {
   const checks = effectsList.querySelectorAll('input[data-kind="enabled"]');
   if (!checks.length) return;
+  chaos.setManualOrder([]);
   checks.forEach((el) => {
     el.checked = true;
+    el.closest('.fxCard')?.classList.add('enabled');
     chaos.setEffectConfig(el.dataset.fx, { enabled: true });
+    chaos.addToManualOrder(el.dataset.fx);
   });
 });
 
@@ -914,8 +977,10 @@ disableAllEffectsBtn.addEventListener('click', () => {
   if (!checks.length) return;
   checks.forEach((el) => {
     el.checked = false;
+    el.closest('.fxCard')?.classList.remove('enabled');
     chaos.setEffectConfig(el.dataset.fx, { enabled: false });
   });
+  chaos.setManualOrder([]);
 });
 
 randomizeParamsBtn.addEventListener('click', () => {

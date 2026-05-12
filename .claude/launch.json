@@ -4,7 +4,7 @@
     {
       "name": "static",
       "runtimeExecutable": "py",
-      "runtimeArgs": ["-m", "http.server", "8765"],
+      "runtimeArgs": ["serve.py", "8765"],
       "port": 8765
     }
   ]
