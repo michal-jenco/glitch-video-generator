@@ -48,3 +48,4 @@
 | `js/gif-exporter.js` | GIF capture via gif.js |
 | `js/presets.js` | Preset persistence + URL hash sharing |
 | `vendor/` | Vendored libs (ffmpeg.wasm, gif.js, mp4-muxer) |
+| `assets/` | Favicons, apple-touch-icon, OG/Twitter share image (1200×630). `source.png` is the original uncropped frame. OG `<meta>` tags in `index.html` use absolute `https://michal-jenco.github.io/glitch-video-generator/...` URLs so scrapers resolve correctly. |
